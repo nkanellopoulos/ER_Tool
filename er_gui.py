@@ -1,12 +1,15 @@
 import os
 import sys
 import tempfile
+from datetime import datetime
 from typing import List
 from typing import Set
+from urllib.parse import urlparse
 
 from PySide6.QtCore import QProcess
 from PySide6.QtCore import QRectF
 from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSize
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtGui import QIcon
@@ -87,19 +90,32 @@ class MainWindow(QMainWindow):
         self.toolbar = self.addToolBar("Tools")
         self.toolbar.addSeparator()
 
+        # Set toolbar icon size
+        self.toolbar.setIconSize(QSize(24, 24))
+
         # View actions
         self.toolbar.addWidget(QLabel("View: "))
-        zoom_in_action = QAction("Zoom In", self)
+        zoom_in_action = QAction(
+            QIcon.fromTheme("zoom-in", QIcon.fromTheme("view-zoom-in")), "Zoom In", self
+        )
         zoom_in_action.setShortcut("Ctrl++")
         zoom_in_action.triggered.connect(lambda: self.diagram_view.scale(1.2, 1.2))
         self.toolbar.addAction(zoom_in_action)
 
-        zoom_out_action = QAction("Zoom Out", self)
+        zoom_out_action = QAction(
+            QIcon.fromTheme("zoom-out", QIcon.fromTheme("view-zoom-out")),
+            "Zoom Out",
+            self,
+        )
         zoom_out_action.setShortcut("Ctrl+-")
         zoom_out_action.triggered.connect(lambda: self.diagram_view.scale(0.8, 0.8))
         self.toolbar.addAction(zoom_out_action)
 
-        fit_action = QAction("Fit View", self)
+        fit_action = QAction(
+            QIcon.fromTheme("zoom-fit-best", QIcon.fromTheme("view-fullscreen")),
+            "Fit View",
+            self,
+        )
         fit_action.setShortcut("Ctrl+0")
         fit_action.triggered.connect(self.fit_view)
         self.toolbar.addAction(fit_action)
@@ -108,12 +124,18 @@ class MainWindow(QMainWindow):
 
         # Selection actions
         self.toolbar.addWidget(QLabel("Selection: "))
-        select_all_action = QAction("Select All", self)
+        select_all_action = QAction(
+            QIcon.fromTheme("edit-select-all"), "Select All", self
+        )
         select_all_action.setShortcut("Ctrl+A")
         select_all_action.triggered.connect(self.select_all_tables)
         self.toolbar.addAction(select_all_action)
 
-        deselect_all_action = QAction("Deselect All", self)
+        deselect_all_action = QAction(
+            QIcon.fromTheme("edit-clear", QIcon.fromTheme("edit-delete")),
+            "Deselect All",
+            self,
+        )
         deselect_all_action.setShortcut("Ctrl+D")
         deselect_all_action.triggered.connect(self.deselect_all_tables)
         self.toolbar.addAction(deselect_all_action)
@@ -122,21 +144,29 @@ class MainWindow(QMainWindow):
 
         # Diagram actions
         self.toolbar.addWidget(QLabel("Diagram: "))
-        refresh_action = QAction("Refresh", self)
+        refresh_action = QAction(QIcon.fromTheme("view-refresh"), "Refresh", self)
         refresh_action.setShortcut("F5")
         refresh_action.triggered.connect(self.refresh_diagram)
         self.toolbar.addAction(refresh_action)
 
-        export_action = QAction("Export", self)
+        export_action = QAction(
+            QIcon.fromTheme("document-save", QIcon.fromTheme("filesave")),
+            "Export",
+            self,
+        )
         export_action.setShortcut("Ctrl+S")
         export_action.triggered.connect(self.export_diagram)
         self.toolbar.addAction(export_action)
 
-        self.show_referenced_action = QAction("Show Referenced Tables", self)
+        self.show_referenced_action = QAction(
+            QIcon.fromTheme("view-list-tree"), "Show Referenced Tables", self
+        )
         self.show_referenced_action.setCheckable(True)
         self.show_referenced_action.setChecked(False)
         self.show_referenced_action.triggered.connect(self.refresh_diagram)
         self.toolbar.addAction(self.show_referenced_action)
+
+        self.db_name = "unknown"
 
         # Load initial data if connection string exists
         if self.conn_edit.text():
@@ -190,6 +220,10 @@ class MainWindow(QMainWindow):
             if not conn_string:
                 raise ValueError("No database connection string provided")
 
+            # Extract database name from connection string
+            parsed = urlparse(conn_string)
+            self.db_name = parsed.path.strip("/")
+
             self.tables = SchemaReader.from_database(conn_string)
 
             # Populate tree widget
@@ -216,8 +250,7 @@ class MainWindow(QMainWindow):
     def refresh_diagram(self):
         """Generate and display the diagram"""
         try:
-            # Generate DOT file
-            generator = DotGenerator(self.tables)
+            generator = DotGenerator(self.tables, self.db_name)
             dot_content = generator.generate(
                 exclude_tables=self.get_excluded_tables(),
                 show_referenced=self.show_referenced_action.isChecked(),
@@ -252,16 +285,18 @@ class MainWindow(QMainWindow):
     def export_diagram(self):
         """Export current diagram to file"""
         try:
+            # Generate default filename
+            default_name = f"{self.db_name}_{datetime.now().strftime('%Y-%m-%d')}"
             file_name, _ = QFileDialog.getSaveFileName(
                 self,
                 "Export Diagram",
-                "",
+                default_name,
                 "SVG files (*.svg);;PNG files (*.png);;PDF files (*.pdf)",
             )
 
             if file_name:
                 # Generate DOT file
-                generator = DotGenerator(self.tables)
+                generator = DotGenerator(self.tables, self.db_name)
                 dot_content = generator.generate(
                     exclude_tables=self.get_excluded_tables()
                 )
