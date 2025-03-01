@@ -6,14 +6,19 @@ from typing import Set
 
 from PySide6.QtCore import QProcess
 from PySide6.QtCore import QRectF
+from PySide6.QtCore import QSettings
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
+from PySide6.QtGui import QIcon
 from PySide6.QtGui import QPainter
 from PySide6.QtSvgWidgets import QGraphicsSvgItem
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtWidgets import QGraphicsScene
 from PySide6.QtWidgets import QGraphicsView
+from PySide6.QtWidgets import QHBoxLayout
+from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLineEdit
 from PySide6.QtWidgets import QMainWindow
 from PySide6.QtWidgets import QSplitter
 from PySide6.QtWidgets import QTreeWidget
@@ -53,6 +58,15 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
         layout = QVBoxLayout(main_widget)
 
+        # Add connection string widget
+        conn_layout = QHBoxLayout()
+        conn_layout.addWidget(QLabel("Connection String:"))
+        self.conn_edit = QLineEdit()
+        self.conn_edit.setText(os.getenv("DB_CONNECTION", ""))
+        self.conn_edit.textChanged.connect(self.on_connection_changed)
+        conn_layout.addWidget(self.conn_edit)
+        layout.addLayout(conn_layout)
+
         # Create splitter for tree and diagram
         splitter = QSplitter(Qt.Horizontal)
         layout.addWidget(splitter)
@@ -69,36 +83,97 @@ class MainWindow(QMainWindow):
         # Set splitter sizes
         splitter.setSizes([300, 900])
 
-        # Create toolbar
-        toolbar = self.addToolBar("Tools")
+        # Create toolbar with sections
+        self.toolbar = self.addToolBar("Tools")
+        self.toolbar.addSeparator()
 
-        # Add refresh action
+        # View actions
+        self.toolbar.addWidget(QLabel("View: "))
+        zoom_in_action = QAction("Zoom In", self)
+        zoom_in_action.setShortcut("Ctrl++")
+        zoom_in_action.triggered.connect(lambda: self.diagram_view.scale(1.2, 1.2))
+        self.toolbar.addAction(zoom_in_action)
+
+        zoom_out_action = QAction("Zoom Out", self)
+        zoom_out_action.setShortcut("Ctrl+-")
+        zoom_out_action.triggered.connect(lambda: self.diagram_view.scale(0.8, 0.8))
+        self.toolbar.addAction(zoom_out_action)
+
+        fit_action = QAction("Fit View", self)
+        fit_action.setShortcut("Ctrl+0")
+        fit_action.triggered.connect(self.fit_view)
+        self.toolbar.addAction(fit_action)
+
+        self.toolbar.addSeparator()
+
+        # Selection actions
+        self.toolbar.addWidget(QLabel("Selection: "))
+        select_all_action = QAction("Select All", self)
+        select_all_action.setShortcut("Ctrl+A")
+        select_all_action.triggered.connect(self.select_all_tables)
+        self.toolbar.addAction(select_all_action)
+
+        deselect_all_action = QAction("Deselect All", self)
+        deselect_all_action.setShortcut("Ctrl+D")
+        deselect_all_action.triggered.connect(self.deselect_all_tables)
+        self.toolbar.addAction(deselect_all_action)
+
+        self.toolbar.addSeparator()
+
+        # Diagram actions
+        self.toolbar.addWidget(QLabel("Diagram: "))
         refresh_action = QAction("Refresh", self)
+        refresh_action.setShortcut("F5")
         refresh_action.triggered.connect(self.refresh_diagram)
-        toolbar.addAction(refresh_action)
+        self.toolbar.addAction(refresh_action)
 
-        # Add export action
         export_action = QAction("Export", self)
+        export_action.setShortcut("Ctrl+S")
         export_action.triggered.connect(self.export_diagram)
-        toolbar.addAction(export_action)
+        self.toolbar.addAction(export_action)
 
-        # Add show referenced checkbox
         self.show_referenced_action = QAction("Show Referenced Tables", self)
         self.show_referenced_action.setCheckable(True)
         self.show_referenced_action.setChecked(False)
         self.show_referenced_action.triggered.connect(self.refresh_diagram)
-        toolbar.addAction(self.show_referenced_action)
+        self.toolbar.addAction(self.show_referenced_action)
 
-        # Load initial data
-        self.load_tables()
+        # Load initial data if connection string exists
+        if self.conn_edit.text():
+            self.load_tables()
 
-        # Connect signals
-        self.table_tree.itemChanged.connect(self.refresh_diagram)
+    def on_connection_changed(self):
+        """Handle connection string changes"""
+        if self.conn_edit.text():
+            self.load_tables()
+
+    def select_all_tables(self):
+        """Select all tables in the tree"""
+        iterator = QTreeWidgetItemIterator(self.table_tree)
+        while iterator.value():
+            iterator.value().setCheckState(0, Qt.Checked)
+            iterator += 1
+        self.refresh_diagram()
+
+    def deselect_all_tables(self):
+        """Deselect all tables in the tree"""
+        iterator = QTreeWidgetItemIterator(self.table_tree)
+        while iterator.value():
+            iterator.value().setCheckState(0, Qt.Unchecked)
+            iterator += 1
+        self.refresh_diagram()
+
+    def fit_view(self):
+        """Fit diagram to view"""
+        if self.diagram_view.scene():
+            self.diagram_view.fitInView(
+                self.diagram_view.scene().itemsBoundingRect(), Qt.KeepAspectRatio
+            )
 
     def load_tables(self):
         """Load tables from database and populate tree widget"""
         try:
-            conn_string = os.getenv("DB_CONNECTION")
+            conn_string = self.conn_edit.text()
             if not conn_string:
                 raise ValueError("No database connection string provided")
 
