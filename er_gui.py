@@ -41,13 +41,31 @@ class ERDiagramView(QGraphicsView):
         self.setRenderHint(QPainter.Antialiasing)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     def wheelEvent(self, event):
-        """Handle zoom with mouse wheel"""
-        factor = 1.1
-        if event.angleDelta().y() < 0:
-            factor = 1.0 / factor
-        self.scale(factor, factor)
+        """Handle mouse wheel for panning and zooming"""
+        if event.modifiers() & Qt.ControlModifier:
+            # Zoom when Ctrl is pressed
+            factor = 1.1
+            if event.angleDelta().y() < 0:
+                factor = 1.0 / factor
+            self.scale(factor, factor)
+        else:
+            # Pan vertically and horizontally
+            if event.modifiers() & Qt.ShiftModifier:
+                # Horizontal scroll when Shift is pressed
+                delta = event.angleDelta().y()
+                self.horizontalScrollBar().setValue(
+                    self.horizontalScrollBar().value() - delta
+                )
+            else:
+                # Vertical scroll by default
+                delta = event.angleDelta().y()
+                self.verticalScrollBar().setValue(
+                    self.verticalScrollBar().value() - delta
+                )
 
 
 class MainWindow(QMainWindow):
@@ -61,14 +79,28 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
         layout = QVBoxLayout(main_widget)
 
-        # Add connection string widget
+        # Add layout for connection settings
+        settings_layout = QHBoxLayout()
+
+        # Connection string input
         conn_layout = QHBoxLayout()
-        conn_layout.addWidget(QLabel("Connection String:"))
+        conn_layout.addWidget(QLabel("Connection:"))
         self.conn_edit = QLineEdit()
         self.conn_edit.setText(os.getenv("DB_CONNECTION", ""))
         self.conn_edit.textChanged.connect(self.on_connection_changed)
         conn_layout.addWidget(self.conn_edit)
-        layout.addLayout(conn_layout)
+        settings_layout.addLayout(conn_layout)
+
+        # Table prefix input
+        prefix_layout = QHBoxLayout()
+        prefix_layout.addWidget(QLabel("Table Prefix:"))
+        self.prefix_edit = QLineEdit()
+        self.prefix_edit.setText(os.getenv("TABLE_PREFIX", "CyberRange_RESTAPI_"))
+        self.prefix_edit.textChanged.connect(self.refresh_diagram)
+        prefix_layout.addWidget(self.prefix_edit)
+        settings_layout.addLayout(prefix_layout)
+
+        layout.addLayout(settings_layout)
 
         # Create splitter for tree and diagram
         splitter = QSplitter(Qt.Horizontal)
@@ -250,7 +282,9 @@ class MainWindow(QMainWindow):
     def refresh_diagram(self):
         """Generate and display the diagram"""
         try:
-            generator = DotGenerator(self.tables, self.db_name)
+            generator = DotGenerator(
+                self.tables, self.db_name, table_prefix=self.prefix_edit.text()
+            )
             dot_content = generator.generate(
                 exclude_tables=self.get_excluded_tables(),
                 show_referenced=self.show_referenced_action.isChecked(),
