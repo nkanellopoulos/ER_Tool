@@ -9,17 +9,21 @@ from schema_reader import TableConstraint
 
 
 class DotGenerator:
-    def __init__(self, tables: Dict[str, Table], db_name: str = "unknown"):
+    def __init__(
+        self, tables: Dict[str, Table], db_name: str = "unknown", table_prefix: str = ""
+    ):
         self.tables = tables
         self.db_name = db_name
-        # Add a name mapping dictionary to keep track of original and display names
+        self.table_prefix = table_prefix
         self.display_names = {
             name: self._get_display_name(name) for name in tables.keys()
         }
 
     def _get_display_name(self, table_name: str) -> str:
         """Convert full table name to display name"""
-        return table_name.replace("CyberRange_RESTAPI_", "..._")
+        if self.table_prefix and table_name.startswith(self.table_prefix):
+            return "..." + table_name[len(self.table_prefix) :]
+        return table_name
 
     def _generate_excluded_tables_note(self, excluded_tables: List[str]) -> List[str]:
         """Generate a note showing excluded tables"""
