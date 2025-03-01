@@ -15,39 +15,83 @@ def read_ddl_input(file_path=None):
 def parse_ddl(ddl):
     tables = {}
 
-    # Adjusted regex patterns
     table_pattern = re.compile(
         r'CREATE TABLE\s+(?:\w+\.)?"?(\w+)"?\s*\((.*?)\);\s*', re.IGNORECASE | re.DOTALL
     )
     column_pattern = re.compile(
-        r'\s*"?(?P<name>\w+)"?\s+(?P<type>[a-zA-Z0-9\s\(\)]+)(?P<constraints>[^,]*)(?=,|\))',
-        re.IGNORECASE,
+        r'^\s*"?(?P<name>\w+)"?\s+(?P<type>[a-zA-Z0-9\s\(\)]+)(?P<constraints>(?:[^,]*(?:constraint\s+\w+\s+)?(?:references|unique|primary\s+key|not\s+null)[^,]*|[^,]*)*)(?=,|\s*$)',
+        re.IGNORECASE | re.MULTILINE,
     )
     fk_pattern = re.compile(r'\s+REFERENCES\s+(?:\w+\.)?"?(\w+)"?', re.IGNORECASE)
+    unique_pattern = re.compile(r"unique\s*\((.*?)\)", re.IGNORECASE)
+    multi_col_constraint_pattern = re.compile(
+        r'CONSTRAINT\s+"\w+"\s+UNIQUE\s*\((.*?)\)', re.IGNORECASE
+    )
 
     matches = table_pattern.finditer(ddl)
     for match in matches:
         current_table = match.group(1)
-        tables[current_table] = {"columns": [], "foreign_keys": []}
+        tables[current_table] = {
+            "columns": [],
+            "foreign_keys": [],
+            "table_constraints": [],
+        }
 
-        table_def = match.group(2) + ","  # Add comma for easier parsing
-        columns = column_pattern.finditer(table_def)
+        table_def = match.group(2)
+        table_constraints = {}
+        multi_column_fields = (
+            set()
+        )  # Track fields that are part of multi-column constraints
 
-        for col_match in columns:
+        # First pass: collect multi-column constraints
+        for constraint_match in multi_col_constraint_pattern.finditer(table_def):
+            columns = [
+                c.strip().strip('"') for c in constraint_match.group(1).split(",")
+            ]
+            constraint_text = f"UNIQUE({', '.join(columns)})"
+            tables[current_table]["table_constraints"].append(constraint_text)
+            # Track these columns as part of multi-column constraint
+            multi_column_fields.update(columns)
+
+        # Second pass: process columns
+        for col_match in column_pattern.finditer(table_def):
             column_name = col_match.group("name").strip()
+            if not column_name or column_name.lower() in (
+                "constraint",
+                "unique",
+                "primary key",
+            ):
+                continue
+
             column_type = col_match.group("type").strip()
             constraints = col_match.group("constraints").strip()
 
-            # Build column detail string with relevant constraints, with consistent spacing
-            column_detail = f"<b>{column_name}</b>:  {column_type}"
+            # Build column detail string
+            constraints_list = []
             if "NOT NULL" in constraints.upper():
-                column_detail += " (NN)"
+                constraints_list.append("NN")
             if "PRIMARY KEY" in constraints.upper():
-                column_detail += " (PK)"
+                constraints_list.append("PK")
+            # Only add UNIQUE if it's a single-column unique constraint
+            if (
+                "UNIQUE" in constraints.upper()
+                and column_name not in multi_column_fields
+            ):
+                constraints_list.append("UNIQUE")
+            if "REFERENCES" in constraints.upper():  # Changed this condition
+                constraints_list.append("FK")
+
+            column_detail = f"<b>{column_name}</b>:  {column_type}"
+            # Remove unwanted text and clean up the output
+            column_detail = (
+                column_detail.replace("constraint", "").replace("  ", " ").strip()
+            )
+            if constraints_list:
+                column_detail += f" ({', '.join(constraints_list)})"
 
             tables[current_table]["columns"].append(column_detail.strip())
 
-            # Check for foreign key references
+            # Handle foreign keys
             if "REFERENCES" in constraints.upper():
                 fk_match = fk_pattern.search(constraints)
                 if fk_match:
@@ -91,6 +135,12 @@ def generate_dot_diagram(ddl, exclude_tables):
                 column = "".join(column.split(" ")[2:])
 
             dot_output.append(f'<TR><TD ALIGN="LEFT">{column}</TD></TR>')
+
+        # Add table-level constraints at the bottom
+        for constraint in info.get("table_constraints", []):
+            dot_output.append(
+                f'<TR><TD ALIGN="LEFT" BGCOLOR="#f0f0f0"><I>{constraint}</I></TD></TR>'
+            )
 
         dot_output.append("</TABLE>>];")
 
