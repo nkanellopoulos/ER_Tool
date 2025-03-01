@@ -19,6 +19,30 @@ class DotGenerator:
         """Convert full table name to display name"""
         return table_name.replace("CyberRange_RESTAPI_", "..._")
 
+    def _generate_excluded_tables_note(self, excluded_tables: List[str]) -> List[str]:
+        """Generate a note showing excluded tables"""
+        if not excluded_tables:
+            return []
+
+        # Sort and format table names for display
+        excluded = sorted(
+            t.replace("CyberRange_RESTAPI_", "..._") for t in excluded_tables
+        )
+
+        dot_output = [
+            "note [label=<",
+            '<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">',  # Added CELLPADDING
+            '<TR><TD BGCOLOR="#f0f0f0" HEIGHT="30"><B>Excluded Tables:</B></TD></TR>',  # Added HEIGHT
+        ]
+
+        for table in excluded:
+            dot_output.append(
+                f'<TR><TD ALIGN="LEFT" HEIGHT="22">{table}</TD></TR>'
+            )  # Added HEIGHT
+
+        dot_output.extend(["</TABLE>", '>, pos="0,0!", shape=none];'])
+        return dot_output
+
     def generate(self, exclude_tables: List[str] = None) -> str:
         """Generate DOT format output from table definitions"""
         if exclude_tables:
@@ -50,6 +74,10 @@ class DotGenerator:
             "graph [splines=ortho, nodesep=1.2, ranksep=1.2];",
             'node [shape=none, fontsize=12, fontname="American Typewriter"];',
         ]
+
+        # Add excluded tables note at the beginning
+        if exclude_tables:
+            dot_output.extend(self._generate_excluded_tables_note(exclude_tables))
 
         # Add tables
         for table_name, table in tables.items():
