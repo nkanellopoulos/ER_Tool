@@ -9,6 +9,10 @@ from typing import Union
 
 import psycopg2
 
+from db_readers.base import DatabaseReader
+from db_readers.mysql import MySQLReader
+from db_readers.postgres import PostgresReader
+
 
 @dataclass
 class Column:
@@ -37,111 +41,59 @@ class Table:
 
 class SchemaReader:
     @staticmethod
+    def get_reader(connection_string: str) -> DatabaseReader:
+        """Factory method to get appropriate database reader"""
+        if connection_string.startswith("postgresql://"):
+            return PostgresReader()
+        elif connection_string.startswith("mysql://"):
+            print("Warning: MySQL support is not implemented yet", file=sys.stderr)
+            return MySQLReader()
+        else:
+            raise ValueError("Unsupported database type")
+
+    @staticmethod
     def from_database(conn_string: str) -> Dict[str, Table]:
-        """Read schema from a live PostgreSQL database"""
-        tables = {}
-        with psycopg2.connect(conn_string) as conn:
-            with conn.cursor() as cur:
-                # Get all tables
-                cur.execute(
-                    """
-                    SELECT table_name 
-                    FROM information_schema.tables 
-                    WHERE table_schema = 'public'
-                """
-                )
-                for (table_name,) in cur.fetchall():
-                    print(f"Processing table {table_name}", file=sys.stderr)
-                    columns = []
-                    foreign_keys = []
+        reader = SchemaReader.get_reader(conn_string)
+        reader.connect(conn_string)
+        db_tables = reader.read_schema()
 
-                    # Get columns and their properties
-                    cur.execute(
-                        """
-                        SELECT 
-                            c.column_name, 
-                            c.data_type,
-                            c.is_nullable,
-                            (SELECT tc.constraint_type 
-                             FROM information_schema.table_constraints tc 
-                             JOIN information_schema.constraint_column_usage ccu 
-                             ON tc.constraint_name = ccu.constraint_name 
-                             WHERE tc.table_name = c.table_name 
-                             AND ccu.column_name = c.column_name 
-                             AND tc.constraint_type = 'PRIMARY KEY') is_primary,
-                            (SELECT ccu.table_name
-                             FROM information_schema.table_constraints tc
-                             JOIN information_schema.key_column_usage kcu
-                             ON tc.constraint_name = kcu.constraint_name
-                             JOIN information_schema.constraint_column_usage ccu
-                             ON ccu.constraint_name = tc.constraint_name
-                             WHERE tc.table_name = c.table_name
-                             AND kcu.column_name = c.column_name
-                             AND tc.constraint_type = 'FOREIGN KEY') referenced_table
-                        FROM information_schema.columns c
-                        WHERE c.table_name = %s
-                        AND c.table_schema = 'public'
-                        ORDER BY c.ordinal_position
-                    """,
-                        (table_name,),
+        # Convert from DB models to our internal models
+        return {
+            name: Table(
+                name=name,
+                columns=[
+                    Column(
+                        name=c.name,
+                        type=c.type,
+                        constraints=SchemaReader._get_constraints(c),
+                        is_primary=c.is_primary,
+                        is_foreign=bool(c.references),
+                        references=c.references,
                     )
-
-                    for col in cur.fetchall():
-                        col_name, col_type, nullable, is_primary, ref_table = col
-                        constraints = []
-                        if not nullable == "YES":
-                            constraints.append("NN")
-                        if is_primary:
-                            constraints.append("PK")
-                        if ref_table:
-                            constraints.append("FK")
-                            foreign_keys.append((col_name, ref_table))
-
-                        columns.append(
-                            Column(
-                                name=col_name,
-                                type=col_type,
-                                constraints=constraints,
-                                is_primary=bool(is_primary),
-                                is_foreign=bool(ref_table),
-                                references=ref_table,
-                            )
-                        )
-
-                    # Get multi-column constraints
-                    cur.execute(
-                        """
-                        SELECT 
-                            tc.constraint_type,
-                            array_agg(kcu.column_name::text)
-                        FROM information_schema.table_constraints tc
-                        JOIN information_schema.key_column_usage kcu
-                        ON tc.constraint_name = kcu.constraint_name
-                        WHERE tc.table_name = %s
-                        AND tc.constraint_type IN ('UNIQUE')
-                        GROUP BY tc.constraint_name, tc.constraint_type
-                    """,
-                        (table_name,),
+                    for c in table.columns
+                ],
+                constraints=[
+                    TableConstraint(
+                        type=c.type, columns=c.columns, definition=c.definition
                     )
+                    for c in table.constraints
+                ],
+                foreign_keys=table.foreign_keys,
+            )
+            for name, table in db_tables.items()
+        }
 
-                    constraints = []
-                    for constraint_type, columns_array in cur.fetchall():
-                        constraints.append(
-                            TableConstraint(
-                                type=constraint_type,
-                                columns=columns_array,
-                                definition=f"{constraint_type}({', '.join(columns_array)})",
-                            )
-                        )
-
-                    tables[table_name] = Table(
-                        name=table_name,
-                        columns=columns,
-                        constraints=constraints,
-                        foreign_keys=foreign_keys,
-                    )
-
-        return tables
+    @staticmethod
+    def _get_constraints(col: Column) -> List[str]:
+        """Convert DB column properties to constraint list"""
+        constraints = []
+        if not col.is_nullable:
+            constraints.append("NN")
+        if col.is_primary:
+            constraints.append("PK")
+        if col.references:
+            constraints.append("FK")
+        return constraints
 
     @staticmethod
     def from_ddl(ddl: str) -> Dict[str, Table]:
