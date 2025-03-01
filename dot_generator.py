@@ -43,8 +43,16 @@ class DotGenerator:
         dot_output.extend(["</TABLE>", '>, pos="0,0!", shape=none];'])
         return dot_output
 
-    def generate(self, exclude_tables: List[str] = None) -> str:
-        """Generate DOT format output from table definitions"""
+    def generate(
+        self, exclude_tables: List[str] = None, show_referenced: bool = False
+    ) -> str:
+        """
+        Generate DOT format output from table definitions
+
+        Args:
+            exclude_tables: List of tables to exclude
+            show_referenced: Whether to show referenced tables (default: False)
+        """
         if exclude_tables:
             # First, find all referenced tables
             referenced_tables = set()
@@ -55,13 +63,22 @@ class DotGenerator:
                     )
                     referenced_tables.add(ref_table)
 
-            # Only exclude tables that aren't referenced by others
-            actual_excludes = [t for t in exclude_tables if t not in referenced_tables]
-            print(
-                f"Excluding {len(actual_excludes)} tables (kept {len(exclude_tables) - len(actual_excludes)} referenced tables)",
-                file=sys.stderr,
-            )
-            tables = {k: v for k, v in self.tables.items() if k not in actual_excludes}
+            # Determine which tables to keep
+            if show_referenced:
+                # Keep referenced tables
+                actual_excludes = [
+                    t for t in exclude_tables if t not in referenced_tables
+                ]
+                tables = {
+                    k: v for k, v in self.tables.items() if k not in actual_excludes
+                }
+            else:
+                # Only keep checked tables
+                tables = {
+                    k: v for k, v in self.tables.items() if k not in exclude_tables
+                }
+
+            print(f"Showing {len(tables)} tables", file=sys.stderr)
         else:
             tables = self.tables
 
