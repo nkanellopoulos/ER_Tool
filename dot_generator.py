@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime
 from typing import Dict
 from typing import List
 
@@ -8,8 +9,9 @@ from schema_reader import TableConstraint
 
 
 class DotGenerator:
-    def __init__(self, tables: Dict[str, Table]):
+    def __init__(self, tables: Dict[str, Table], db_name: str = "unknown"):
         self.tables = tables
+        self.db_name = db_name
         # Add a name mapping dictionary to keep track of original and display names
         self.display_names = {
             name: self._get_display_name(name) for name in tables.keys()
@@ -53,43 +55,20 @@ class DotGenerator:
             exclude_tables: List of tables to exclude
             show_referenced: Whether to show referenced tables (default: False)
         """
-        if exclude_tables:
-            # First, find all referenced tables
-            referenced_tables = set()
-            for table in self.tables.values():
-                for _, ref_table in table.foreign_keys:
-                    ref_table = (
-                        ref_table.split(".")[-1] if "." in ref_table else ref_table
-                    )
-                    referenced_tables.add(ref_table)
-
-            # Determine which tables to keep
-            if show_referenced:
-                # Keep referenced tables
-                actual_excludes = [
-                    t for t in exclude_tables if t not in referenced_tables
-                ]
-                tables = {
-                    k: v for k, v in self.tables.items() if k not in actual_excludes
-                }
-            else:
-                # Only keep checked tables
-                tables = {
-                    k: v for k, v in self.tables.items() if k not in exclude_tables
-                }
-
-            print(f"Showing {len(tables)} tables", file=sys.stderr)
-        else:
-            tables = self.tables
-
-        print(f"Generating diagram for {len(tables)} tables", file=sys.stderr)
-        print(f"Tables: {list(tables.keys())}", file=sys.stderr)
+        tables = self._get_filtered_tables(exclude_tables, show_referenced)
 
         dot_output = [
             "digraph ERD {",
             "rankdir=TB;",
             "graph [splines=ortho, nodesep=1.2, ranksep=1.2];",
             'node [shape=none, fontsize=12, fontname="American Typewriter"];',
+            # Add title with box
+            'labelloc="t";',
+            'label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10">',
+            '<TR><TD BGCOLOR="#e8e8e8">',
+            f'<FONT POINT-SIZE="24">{self._generate_title(len(self.tables), len(tables))}</FONT>',
+            "</TD></TR>",
+            "</TABLE>>;",
         ]
 
         # Add excluded tables note at the beginning
@@ -106,6 +85,33 @@ class DotGenerator:
 
         dot_output.append("}")
         return "\n".join(dot_output)
+
+    def _generate_title(self, total_tables: int, shown_tables: int) -> str:
+        """Generate diagram title with metadata"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        db_label = self.db_name.upper()  # Make database name uppercase
+        return f"{db_label}<BR/>{timestamp}<BR/>Total tables: {total_tables} | Shown: {shown_tables}"
+
+    def _get_filtered_tables(
+        self, exclude_tables: List[str], show_referenced: bool
+    ) -> Dict[str, Table]:
+        """Get filtered tables based on exclusion list and reference setting"""
+        if not exclude_tables:
+            return self.tables
+
+        referenced_tables = set()
+        if show_referenced:
+            for table in self.tables.values():
+                for _, ref_table in table.foreign_keys:
+                    ref_table = (
+                        ref_table.split(".")[-1] if "." in ref_table else ref_table
+                    )
+                    referenced_tables.add(ref_table)
+            actual_excludes = [t for t in exclude_tables if t not in referenced_tables]
+        else:
+            actual_excludes = exclude_tables
+
+        return {k: v for k, v in self.tables.items() if k not in actual_excludes}
 
     def _generate_table_node(self, table: Table) -> List[str]:
         """Generate DOT node definition for a table"""
