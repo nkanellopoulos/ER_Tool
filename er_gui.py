@@ -142,25 +142,38 @@ class MainWindow(QMainWindow):
         if self.conn_edit.text():
             self.load_tables()
 
+        # Disconnect auto-refresh during bulk operations
+        self.auto_refresh = True
+        self.table_tree.itemChanged.connect(self.on_table_selection_changed)
+
     def on_connection_changed(self):
         """Handle connection string changes"""
         if self.conn_edit.text():
             self.load_tables()
 
+    def on_table_selection_changed(self, item, column):
+        """Handle individual table selection changes"""
+        if self.auto_refresh:
+            self.refresh_diagram()
+
     def select_all_tables(self):
         """Select all tables in the tree"""
+        self.auto_refresh = False  # Disable auto-refresh
         iterator = QTreeWidgetItemIterator(self.table_tree)
         while iterator.value():
             iterator.value().setCheckState(0, Qt.Checked)
             iterator += 1
+        self.auto_refresh = True  # Re-enable auto-refresh
         self.refresh_diagram()
 
     def deselect_all_tables(self):
         """Deselect all tables in the tree"""
+        self.auto_refresh = False  # Disable auto-refresh
         iterator = QTreeWidgetItemIterator(self.table_tree)
         while iterator.value():
             iterator.value().setCheckState(0, Qt.Unchecked)
             iterator += 1
+        self.auto_refresh = True  # Re-enable auto-refresh
         self.refresh_diagram()
 
     def fit_view(self):
