@@ -19,16 +19,36 @@ class MySQLReader(DatabaseReader):
             host_db = parts[1].split("/")
             host_port = host_db[0].split(":")
 
+            # Add timeout and connection options
             self.connection = mysql.connector.connect(
                 user=user_pass[0],
                 password=user_pass[1],
                 host=host_port[0],
                 port=int(host_port[1]) if len(host_port) > 1 else 3306,
                 database=host_db[1],
+                connect_timeout=10,  # 10 second timeout
+                connection_timeout=10,
+                use_pure=True,  # Use pure Python implementation
+                allow_local_infile=False,
+                auth_plugin="mysql_native_password",
             )
             self.cursor = self.connection.cursor(dictionary=True)
-        except MySQLError as e:
-            raise ConnectionError(f"Failed to connect to MySQL: {e}")
+        except mysql.connector.Error as e:
+            error_msg = str(e)
+            if "Access denied" in error_msg:
+                raise ConnectionError(
+                    f"Access denied for user '{user_pass[0]}'. Please check credentials."
+                )
+            elif "Can't connect" in error_msg:
+                raise ConnectionError(
+                    f"Cannot connect to MySQL server at {host_port[0]}:{host_port[1] if len(host_port) > 1 else 3306}. Server may be down or not accepting connections."
+                )
+            elif "Unknown database" in error_msg:
+                raise ConnectionError(f"Database '{host_db[1]}' does not exist.")
+            else:
+                raise ConnectionError(f"MySQL connection failed: {error_msg}")
+        except Exception as e:
+            raise ConnectionError(f"Failed to connect to MySQL: {str(e)}")
 
     def get_tables(self) -> List[str]:
         """Get list of all tables in the database"""
