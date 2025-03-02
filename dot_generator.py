@@ -101,19 +101,30 @@ class DotGenerator:
         if not exclude_tables:
             return self.tables
 
-        referenced_tables = set()
+        # Convert exclude_tables to set for faster lookups
+        excluded = set(exclude_tables)
+
+        # Get selected tables (those not excluded)
+        selected_tables = {k: v for k, v in self.tables.items() if k not in excluded}
+
         if show_referenced:
-            for table in self.tables.values():
+            # Get tables referenced by selected tables
+            referenced_tables = set()
+            for table in selected_tables.values():
                 for _, ref_table in table.foreign_keys:
                     ref_table = (
                         ref_table.split(".")[-1] if "." in ref_table else ref_table
                     )
                     referenced_tables.add(ref_table)
-            actual_excludes = [t for t in exclude_tables if t not in referenced_tables]
-        else:
-            actual_excludes = exclude_tables
 
-        return {k: v for k, v in self.tables.items() if k not in actual_excludes}
+            # Add referenced tables to the result
+            return {
+                k: v
+                for k, v in self.tables.items()
+                if k not in excluded or k in referenced_tables
+            }
+        else:
+            return selected_tables
 
     def _generate_table_node(self, table: Table) -> List[str]:
         """Generate DOT node definition for a table"""
