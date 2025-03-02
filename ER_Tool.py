@@ -32,6 +32,7 @@ from PySide6.QtWidgets import QTreeWidgetItemIterator
 from PySide6.QtWidgets import QVBoxLayout
 from PySide6.QtWidgets import QWidget
 
+from connection_dialog import ConnectionDialog
 from dot_generator import DotGenerator
 from schema_reader import SchemaReader
 
@@ -45,6 +46,7 @@ class ERDiagramView(QGraphicsView):
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         # self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.zoom_level = 1.0  # Track zoom level
 
     def wheelEvent(self, event):
         """Handle mouse wheel for panning and zooming"""
@@ -68,6 +70,32 @@ class ERDiagramView(QGraphicsView):
                 self.verticalScrollBar().setValue(
                     self.verticalScrollBar().value() - delta
                 )
+
+    def scale(self, sx: float, sy: float):
+        """Override scale to track zoom level"""
+        super().scale(sx, sy)
+        self.zoom_level *= sx
+        # Notify parent about zoom change
+        if hasattr(self, "on_zoom_changed"):
+            self.on_zoom_changed(self.zoom_level)
+
+    def resetTransform(self):
+        """Override resetTransform to reset zoom level"""
+        super().resetTransform()
+        self.zoom_level = 1.0
+        if hasattr(self, "on_zoom_changed"):
+            self.on_zoom_changed(self.zoom_level)
+
+    def fitInView(
+        self, rect: QRectF, aspect_ratio_mode: Qt.AspectRatioMode = Qt.IgnoreAspectRatio
+    ):
+        """Override fitInView to track zoom level"""
+        super().fitInView(rect, aspect_ratio_mode)
+        # Calculate new zoom level based on the view scale
+        transform = self.transform()
+        self.zoom_level = transform.m11()  # Use horizontal scale factor
+        if hasattr(self, "on_zoom_changed"):
+            self.on_zoom_changed(self.zoom_level)
 
 
 class MainWindow(QMainWindow):
@@ -317,13 +345,69 @@ class MainWindow(QMainWindow):
 
         self.db_name = "unknown"
 
-        # Load initial data if connection string exists
-        if self.conn_edit.text():
+        # Create status bar sections
+        self.status_db_type = QLabel()
+        self.status_user = QLabel()
+        self.status_schema = QLabel()
+        self.status_tables = QLabel()
+
+        # Create zoom level editor
+        self.zoom_edit = QLineEdit()
+        self.zoom_edit.setFixedWidth(70)
+        self.zoom_edit.setAlignment(Qt.AlignCenter)
+        self.zoom_edit.setText("100%")
+        self.zoom_edit.returnPressed.connect(self._on_zoom_edit)
+
+        # Add sections to status bar
+        status_bar = self.statusBar()
+        status_bar.addWidget(self.status_db_type)
+        status_bar.addWidget(QLabel("|"))
+        status_bar.addWidget(self.status_user)
+        status_bar.addWidget(QLabel("|"))
+        status_bar.addWidget(self.status_schema)
+        status_bar.addWidget(QLabel("|"))
+        status_bar.addWidget(self.status_tables)
+        status_bar.addWidget(QLabel("|"))
+        status_bar.addWidget(QLabel("Zoom:"))
+        status_bar.addWidget(self.zoom_edit)
+
+        # Remove connection string from main window
+        settings_layout.removeWidget(self.conn_edit)
+        self.conn_edit.deleteLater()
+        del self.conn_edit
+
+        # Create connection action
+        connect_action = QAction("Connect to Database", self)
+        connect_action.setShortcut("Ctrl+B")  # B for database
+        connect_action.triggered.connect(self.show_connection_dialog)
+
+        # Add to menu and toolbar
+        database_menu = menubar.addMenu("&Database")
+        database_menu.addAction(connect_action)
+
+        # Add database section to toolbar before the existing sections
+        self.toolbar.insertWidget(None, QLabel("Database: "))
+        self.toolbar.insertAction(None, connect_action)
+        self.toolbar.insertSeparator(None)
+
+        # Add database icon
+        connect_action.setData("database")
+        connect_action.setIcon(load_icon("database"))
+
+        # Initialize connection from environment
+        if os.getenv("DB_CONNECTION"):
+            self.connection_string = os.getenv("DB_CONNECTION")
             self.load_tables()
+        else:
+            self.connection_string = ""
+            self.update_status_bar()
 
         # Disconnect auto-refresh during bulk operations
         self.auto_refresh = True
         self.table_tree.itemChanged.connect(self.on_table_selection_changed)
+
+        # Hook up zoom tracking
+        self.diagram_view.on_zoom_changed = self._update_zoom_label
 
     def on_connection_changed(self):
         """Handle connection string changes"""
@@ -334,6 +418,7 @@ class MainWindow(QMainWindow):
         """Handle individual table selection changes"""
         if self.auto_refresh:
             self.refresh_diagram()
+            self.update_status_bar()
 
     def select_all_tables(self):
         """Select all tables in the tree"""
@@ -344,6 +429,7 @@ class MainWindow(QMainWindow):
             iterator += 1
         self.auto_refresh = True  # Re-enable auto-refresh
         self.refresh_diagram()
+        self.update_status_bar()
 
     def deselect_all_tables(self):
         """Deselect all tables in the tree"""
@@ -354,6 +440,7 @@ class MainWindow(QMainWindow):
             iterator += 1
         self.auto_refresh = True  # Re-enable auto-refresh
         self.refresh_diagram()
+        self.update_status_bar()
 
     def fit_view(self):
         """Fit diagram to view"""
@@ -366,19 +453,41 @@ class MainWindow(QMainWindow):
         """Set zoom level to 100%"""
         self.diagram_view.resetTransform()
         self.diagram_view.scale(1.0, 1.0)
+        self._update_zoom_label(1.0)
+
+    def _update_zoom_label(self, zoom_level: float):
+        """Update zoom level display"""
+        percentage = int(zoom_level * 100)
+        self.zoom_edit.setText(f"{percentage}%")
+
+    def _on_zoom_edit(self):
+        """Handle manual zoom level entry"""
+        try:
+            text = self.zoom_edit.text().rstrip("%")
+            percentage = float(text)
+            if percentage <= 0:
+                raise ValueError("Zoom must be positive")
+
+            # Calculate scale factor to reach desired zoom
+            current_zoom = self.diagram_view.zoom_level * 100
+            factor = percentage / current_zoom
+
+            self.diagram_view.scale(factor, factor)
+        except ValueError:
+            # Restore current zoom level if input was invalid
+            self._update_zoom_label(self.diagram_view.zoom_level)
 
     def load_tables(self):
         """Load tables from database and populate tree widget"""
         try:
-            conn_string = self.conn_edit.text()
-            if not conn_string:
+            if not hasattr(self, "connection_string") or not self.connection_string:
                 raise ValueError("No database connection string provided")
 
             # Extract database name from connection string
-            parsed = urlparse(conn_string)
+            parsed = urlparse(self.connection_string)
             self.db_name = parsed.path.strip("/")
 
-            self.tables = SchemaReader.from_database(conn_string)
+            self.tables = SchemaReader.from_database(self.connection_string)
 
             # Populate tree widget
             self.table_tree.clear()
@@ -387,8 +496,11 @@ class MainWindow(QMainWindow):
                 item.setText(0, table_name)
                 item.setCheckState(0, Qt.Unchecked)
 
+            self.update_status_bar()
+
         except Exception as e:
             print(f"Error loading tables: {e}", file=sys.stderr)
+            QMessageBox.warning(self, "Connection Error", str(e))
 
     def get_excluded_tables(self) -> List[str]:
         """Get list of unchecked tables"""
@@ -429,11 +541,16 @@ class MainWindow(QMainWindow):
             svg_item = QGraphicsSvgItem(svg_path)
             self.diagram_view.scene().addItem(svg_item)
             self.diagram_view.setSceneRect(QRectF(svg_item.boundingRect()))
+
+            # Reset transform before fitting to view
+            self.diagram_view.resetTransform()
             self.diagram_view.fitInView(svg_item, Qt.KeepAspectRatio)
 
             # Cleanup temporary files
             os.unlink(dot_path)
             os.unlink(svg_path)
+
+            self.update_status_bar()  # Add status bar update at end of refresh
 
         except Exception as e:
             print(f"Error refreshing diagram: {e}", file=sys.stderr)
@@ -496,6 +613,54 @@ class MainWindow(QMainWindow):
             "About ER Diagram Tool",
             "ER Diagram Tool\n\n© Nikos Kanellopoulos, 2025",
         )
+
+    def show_connection_dialog(self):
+        """Show the database connection dialog"""
+        dialog = ConnectionDialog(self)
+        if hasattr(self, "connection_string"):
+            dialog.set_connection_string(self.connection_string)
+
+        # Connect to dialog's accepted signal
+        dialog.accepted.connect(lambda: self._on_connection_accepted(dialog))
+
+        # Show dialog non-modally
+        dialog.show()
+
+    def _on_connection_accepted(self, dialog: ConnectionDialog):
+        """Handle accepted connection dialog"""
+        self.connection_string = dialog.get_connection_string()
+        self.load_tables()
+        dialog.deleteLater()  # Clean up the dialog
+
+    def update_status_bar(self):
+        """Update status bar information"""
+        if hasattr(self, "connection_string") and self.connection_string:
+            try:
+                db_type, rest = self.connection_string.split("://")
+                auth, location = rest.split("@")
+                user, _ = auth.split(":")  # Don't show password
+                host_port, db = location.split("/")
+
+                self.status_db_type.setText(f"DB: {db_type}")
+                self.status_user.setText(f"User: {user}")
+                self.status_schema.setText(f"Schema: {db}")
+
+                if hasattr(self, "tables"):
+                    total = len(self.tables)
+                    selected = total - len(self.get_excluded_tables())
+                    self.status_tables.setText(f"Tables: {selected}/{total}")
+                else:
+                    self.status_tables.setText("Tables: 0/0")
+            except:
+                self.status_db_type.setText("Not connected")
+                self.status_user.setText("")
+                self.status_schema.setText("")
+                self.status_tables.setText("")
+        else:
+            self.status_db_type.setText("Not connected")
+            self.status_user.setText("")
+            self.status_schema.setText("")
+            self.status_tables.setText("")
 
 
 def main():
