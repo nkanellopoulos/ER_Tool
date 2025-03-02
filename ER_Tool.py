@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QHBoxLayout
 from PySide6.QtWidgets import QLabel
 from PySide6.QtWidgets import QLineEdit
 from PySide6.QtWidgets import QMainWindow
+from PySide6.QtWidgets import QMessageBox
 from PySide6.QtWidgets import QSplitter
 from PySide6.QtWidgets import QTreeWidget
 from PySide6.QtWidgets import QTreeWidgetItem
@@ -42,8 +43,8 @@ class ERDiagramView(QGraphicsView):
         self.setRenderHint(QPainter.Antialiasing)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     def wheelEvent(self, event):
         """Handle mouse wheel for panning and zooming"""
@@ -76,7 +77,7 @@ class MainWindow(QMainWindow):
         self.temp_files = []
         atexit.register(self.cleanup_temp_files)
 
-        self.setWindowTitle("ER Diagram Viewer")
+        self.setWindowTitle("ER Diagram Tool")
         self.resize(1500, 800)
 
         # Create main widget and layout
@@ -152,11 +153,15 @@ class MainWindow(QMainWindow):
         # Create actions first
         zoom_in_action = QAction("Zoom In", self)
         zoom_in_action.setShortcut("Ctrl+=")  # Ctrl + = or else we have to press shift
-        zoom_in_action.triggered.connect(lambda: self.diagram_view.scale(1.2, 1.2))
+        zoom_in_action.triggered.connect(lambda: self.diagram_view.scale(1.4, 1.4))
 
         zoom_out_action = QAction("Zoom Out", self)
         zoom_out_action.setShortcut("Ctrl+-")
         zoom_out_action.triggered.connect(lambda: self.diagram_view.scale(0.8, 0.8))
+
+        zoom_100_action = QAction("100%", self)
+        zoom_100_action.setShortcut("Ctrl+1")
+        zoom_100_action.triggered.connect(self._zoom_100)
 
         fit_action = QAction("Fit View", self)
         fit_action.setShortcut("Ctrl+0")
@@ -182,6 +187,34 @@ class MainWindow(QMainWindow):
         self.show_referenced_action.setCheckable(True)
         self.show_referenced_action.setChecked(False)
         self.show_referenced_action.triggered.connect(self.refresh_diagram)
+
+        # Create menu bar
+        menubar = self.menuBar()
+
+        # View menu
+        view_menu = menubar.addMenu("&View")
+        view_menu.addAction(zoom_in_action)
+        view_menu.addAction(zoom_out_action)
+        view_menu.addAction(zoom_100_action)
+        view_menu.addAction(fit_action)
+        view_menu.addSeparator()
+        view_menu.addAction(self.show_referenced_action)
+
+        # Selection menu
+        selection_menu = menubar.addMenu("&Selection")
+        selection_menu.addAction(select_all_action)
+        selection_menu.addAction(deselect_all_action)
+
+        # Diagram menu
+        diagram_menu = menubar.addMenu("&Diagram")
+        diagram_menu.addAction(refresh_action)
+        diagram_menu.addAction(export_action)
+
+        # Help menu
+        help_menu = menubar.addMenu("&Help")
+        about_action = QAction("&About", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
 
         # Helper function to load icons with proper color
         def load_icon(name: str) -> QIcon:
@@ -234,6 +267,7 @@ class MainWindow(QMainWindow):
         for name, action in [
             ("zoom-in", zoom_in_action),
             ("zoom-out", zoom_out_action),
+            ("zoom-100", zoom_100_action),
             ("zoom-fit-best", fit_action),
             ("dialog-ok-apply", select_all_action),
             ("edit-clear", deselect_all_action),
@@ -252,6 +286,8 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(zoom_in_action)
 
         self.toolbar.addAction(zoom_out_action)
+
+        self.toolbar.addAction(zoom_100_action)
 
         self.toolbar.addAction(fit_action)
 
@@ -325,6 +361,11 @@ class MainWindow(QMainWindow):
             self.diagram_view.fitInView(
                 self.diagram_view.scene().itemsBoundingRect(), Qt.KeepAspectRatio
             )
+
+    def _zoom_100(self):
+        """Set zoom level to 100%"""
+        self.diagram_view.resetTransform()
+        self.diagram_view.scale(1.0, 1.0)
 
     def load_tables(self):
         """Load tables from database and populate tree widget"""
@@ -447,6 +488,14 @@ class MainWindow(QMainWindow):
                 print(
                     f"Error cleaning up temporary file {tmp_file}: {e}", file=sys.stderr
                 )
+
+    def show_about_dialog(self):
+        """Show the About dialog"""
+        QMessageBox.about(
+            self,
+            "About ER Diagram Tool",
+            "ER Diagram Tool\n\n© Nikos Kanellopoulos, 2025",
+        )
 
 
 def main():
