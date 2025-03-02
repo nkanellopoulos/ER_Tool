@@ -116,18 +116,9 @@ class MainWindow(QMainWindow):
         # Add layout for connection settings
         settings_layout = QHBoxLayout()
 
-        # Connection string input
-        conn_layout = QHBoxLayout()
-        conn_layout.addWidget(QLabel("Connection:"))
-        self.conn_edit = QLineEdit()
-        self.conn_edit.setText(os.getenv("DB_CONNECTION", ""))
-        self.conn_edit.textChanged.connect(self.on_connection_changed)
-        conn_layout.addWidget(self.conn_edit)
-        settings_layout.addLayout(conn_layout)
-
         # Table prefix input
         prefix_layout = QHBoxLayout()
-        prefix_layout.addWidget(QLabel("Table Prefix:"))
+        prefix_layout.addWidget(QLabel("Remove prefix:"))
         self.prefix_edit = QLineEdit()
         self.prefix_edit.setText(os.getenv("TABLE_PREFIX", ""))
         self.prefix_edit.textChanged.connect(self.refresh_diagram)
@@ -371,10 +362,10 @@ class MainWindow(QMainWindow):
         status_bar.addWidget(QLabel("Zoom:"))
         status_bar.addWidget(self.zoom_edit)
 
-        # Remove connection string from main window
-        settings_layout.removeWidget(self.conn_edit)
-        self.conn_edit.deleteLater()
-        del self.conn_edit
+        ## Remove connection string from main window
+        # settings_layout.removeWidget(self.conn_edit)
+        # self.conn_edit.deleteLater()
+        # del self.conn_edit
 
         # Create connection action
         connect_action = QAction("Connect to Database", self)
