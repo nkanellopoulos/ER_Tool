@@ -48,7 +48,10 @@ class DotGenerator:
         return dot_output
 
     def generate(
-        self, exclude_tables: List[str] = None, show_referenced: bool = False
+        self,
+        exclude_tables: List[str] = None,
+        show_referenced: bool = False,
+        overview_mode: bool = False,
     ) -> str:
         """
         Generate DOT format output from table definitions
@@ -56,6 +59,7 @@ class DotGenerator:
         Args:
             exclude_tables: List of tables to exclude
             show_referenced: Whether to show referenced tables (default: False)
+            overview_mode: Whether to generate a simplified overview (default: False)
         """
         tables = self._get_filtered_tables(exclude_tables, show_referenced)
 
@@ -66,7 +70,7 @@ class DotGenerator:
             'node [shape=none, fontsize=12, fontname="American Typewriter"];',
             # Add title with box
             'labelloc="t";',
-            'label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10">',
+            'label=<<TABLE BORDER="1" CELLBORDER="0" CELLPADDING="10">',
             '<TR><TD BGCOLOR="#e8e8e8">',
             f'<FONT POINT-SIZE="24">{self._generate_title(len(self.tables), len(tables))}</FONT>',
             "</TD></TR>",
@@ -79,7 +83,7 @@ class DotGenerator:
 
         # Add tables
         for table_name, table in tables.items():
-            dot_output.extend(self._generate_table_node(table))
+            dot_output.extend(self._generate_table_node(table, overview_mode))
 
         # Add relationships
         for table_name, table in tables.items():
@@ -126,45 +130,56 @@ class DotGenerator:
         else:
             return selected_tables
 
-    def _generate_table_node(self, table: Table) -> List[str]:
+    def _generate_table_node(
+        self, table: Table, overview_mode: bool = False
+    ) -> List[str]:
         """Generate DOT node definition for a table"""
         dot_output = []
         dot_output.append(f"{table.name} [label=<")
         dot_output.append('<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">')
 
-        # Table header
-        dot_output.append(
-            f'<TR><TD BGCOLOR="lightblue"><B>{self.display_names[table.name]}</B></TD></TR>'
-        )
-
-        # Group constraints by type
-        pk_constraints = []
-        other_constraints = []
-        for constraint in table.constraints:
-            if constraint.type == "PRIMARY KEY":
-                pk_constraints = constraint.columns
-            else:
-                other_constraints.append(constraint)
-
-        # Columns with inline PK markers
-        for column in table.columns:
-            col_name = column.name
-            if col_name in pk_constraints:
-                col_name = f"{col_name} 🔑"  # Add key emoji for primary keys
-
-            constraints_text = ""
-            if column.constraints and "PRIMARY KEY" not in column.constraints:
-                constraints_text = f" ({', '.join(c for c in column.constraints if c != 'PRIMARY KEY')})"
-
+        if overview_mode:
+            # Overview mode: simple square node with fixed size and  yellow background
             dot_output.append(
-                f'<TR><TD ALIGN="LEFT" PORT="{column.name}"><B>{col_name}</B>: {column.type}{constraints_text}</TD></TR>'
+                f'<TR><TD BGCOLOR="lightyellow" WIDTH="170" HEIGHT="240">'
+                f"<B>{self.display_names[table.name]}</B>"
+                f"</TD></TR>"
+            )
+        else:
+            # Detailed mode: show all columns and constraints
+            # Table header
+            dot_output.append(
+                f'<TR><TD BGCOLOR="lightblue"><B>{self.display_names[table.name]}</B></TD></TR>'
             )
 
-        # Add remaining constraints
-        for constraint in other_constraints:
-            dot_output.append(
-                f'<TR><TD ALIGN="LEFT" BGCOLOR="#f0f0f0"><I>{constraint.definition}</I></TD></TR>'
-            )
+            # Group constraints by type
+            pk_constraints = []
+            other_constraints = []
+            for constraint in table.constraints:
+                if constraint.type == "PRIMARY KEY":
+                    pk_constraints = constraint.columns
+                else:
+                    other_constraints.append(constraint)
+
+            # Columns with inline PK markers
+            for column in table.columns:
+                col_name = column.name
+                if col_name in pk_constraints:
+                    col_name = f"{col_name} 🔑"  # Add key emoji for primary keys
+
+                constraints_text = ""
+                if column.constraints and "PRIMARY KEY" not in column.constraints:
+                    constraints_text = f" ({', '.join(c for c in column.constraints if c != 'PRIMARY KEY')})"
+
+                dot_output.append(
+                    f'<TR><TD ALIGN="LEFT" PORT="{column.name}"><B>{col_name}</B>: {column.type}{constraints_text}</TD></TR>'
+                )
+
+            # Add remaining constraints
+            for constraint in other_constraints:
+                dot_output.append(
+                    f'<TR><TD ALIGN="LEFT" BGCOLOR="#f0f0f0"><I>{constraint.definition}</I></TD></TR>'
+                )
 
         dot_output.append("</TABLE>>];")
         return dot_output
