@@ -14,9 +14,6 @@ from PySide6.QtGui import QAction
 from PySide6.QtSvgWidgets import QGraphicsSvgItem
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import QFileDialog
-from PySide6.QtWidgets import QHBoxLayout
-from PySide6.QtWidgets import QLabel
-from PySide6.QtWidgets import QLineEdit
 from PySide6.QtWidgets import QMainWindow
 from PySide6.QtWidgets import QMessageBox
 from PySide6.QtWidgets import QSplitter
@@ -28,10 +25,10 @@ from PySide6.QtWidgets import QWidget
 
 from dot_generator import DotGenerator
 from schema_reader import SchemaReader
-from ui_elements.connection_dialog import ConnectionDialog
-from ui_elements.diagram_view import ERDiagramView
-from ui_elements.status_bar_manager import StatusBarManager
-from ui_elements.toolbar_manager import ToolbarManager
+from ui_elements import ConnectionDialog
+from ui_elements import ERDiagramView
+from ui_elements import StatusBarManager
+from ui_elements import ToolbarManager
 
 
 class MainWindow(QMainWindow):
@@ -42,26 +39,12 @@ class MainWindow(QMainWindow):
         atexit.register(self.cleanup_temp_files)
 
         self.setWindowTitle("ER Diagram Tool")
-        self.resize(1500, 800)
+        self.resize(1500, 900)
 
         # Create main widget and layout
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         layout = QVBoxLayout(main_widget)
-
-        # Add layout for connection settings
-        settings_layout = QHBoxLayout()
-
-        # Table prefix input
-        prefix_layout = QHBoxLayout()
-        prefix_layout.addWidget(QLabel("Remove prefix:"))
-        self.prefix_edit = QLineEdit()
-        self.prefix_edit.setText(os.getenv("TABLE_PREFIX", ""))
-        self.prefix_edit.textChanged.connect(self.refresh_diagram)
-        prefix_layout.addWidget(self.prefix_edit)
-        settings_layout.addLayout(prefix_layout)
-
-        layout.addLayout(settings_layout)
 
         # Create splitter for tree and diagram
         splitter = QSplitter(Qt.Horizontal)
@@ -81,6 +64,10 @@ class MainWindow(QMainWindow):
         self.status_bar_manager = StatusBarManager(self)
         self.toolbar_manager = ToolbarManager(self)
         self._setup_menus(menubar)
+
+        # Initialize prefix from environment and set up handler
+        self.status_bar_manager.set_prefix(os.getenv("TABLE_PREFIX", ""))
+        self.status_bar_manager.set_prefix_handler(self.refresh_diagram)
 
         # Connect signals
         self.diagram_view.on_zoom_changed = self.status_bar_manager.update_zoom
@@ -239,7 +226,9 @@ class MainWindow(QMainWindow):
         """Generate and display the diagram"""
         try:
             generator = DotGenerator(
-                self.tables, self.db_name, table_prefix=self.prefix_edit.text()
+                self.tables,
+                self.db_name,
+                table_prefix=self.status_bar_manager.get_prefix(),
             )
             dot_content = generator.generate(
                 exclude_tables=self.get_excluded_tables(),
