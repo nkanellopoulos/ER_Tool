@@ -5,23 +5,24 @@
 ### This project is the outcome of my long, unsuccessful, search for a simple yet effective tool for visualizing database schemas. I decided to give it a try and roll my own.
 
 ![Main Window](docs/images/main-window.png)
+
+**Overview mode:**
 ![Main Window, overview mode](docs/images/main-window-overview-mode.png)
 
 ## Features
 
-- Interactive ER diagram visualization
-- Dark/Light mode support
-- Table filtering and relationship exploration
+- Interactive table filrering (add/remove to the diagram)
+- Remove long table prefixes
 - Export diagrams as SVG/PNG/PDF
 - Overview mode for large schemas
 - Zoom and fit controls
 - Command Line Interface
+- Dark/Light mode support
 
 ## Prerequisites
 
 - Python 3.8+
-- PostgreSQL or MySQL database
-- Graphviz (`brew install graphviz` on macOS)
+- [**Graphviz**](https://graphviz.org) (`brew install graphviz` on macOS)
 
 ## Installation
 
@@ -38,12 +39,14 @@ pip install -r requirements.txt
 
 ## Usage
 
-1. Launch the (GUI) application:
+To launch the (GUI) application:
 ```bash
 python ER_Tool.py
 ```
 
-2. Connect to your database using the connection dialog or environment variable:
+Connect to your database:
+- using the connection dialog
+- environment variable:
 ```bash
 export ER_DB_CONNECTION="postgresql://user:pass@host:port/dbname"
 ```
