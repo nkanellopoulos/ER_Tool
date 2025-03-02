@@ -3,9 +3,7 @@ from datetime import datetime
 from typing import Dict
 from typing import List
 
-from schema_reader import Column
 from schema_reader import Table
-from schema_reader import TableConstraint
 
 
 class DotGenerator:
@@ -37,8 +35,8 @@ class DotGenerator:
 
         dot_output = [
             "note [label=<",
-            '<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">',  # Added CELLPADDING
-            '<TR><TD BGCOLOR="#f0f0f0" HEIGHT="30"><B>Excluded Tables:</B></TD></TR>',  # Added HEIGHT
+            '<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">',
+            '<TR><TD BGCOLOR="#f0f0f0" HEIGHT="30"><B>Excluded Tables:</B></TD></TR>',
         ]
 
         for table in excluded:
@@ -120,26 +118,39 @@ class DotGenerator:
     def _generate_table_node(self, table: Table) -> List[str]:
         """Generate DOT node definition for a table"""
         dot_output = []
-        # Use original name for node ID, display name for label
         dot_output.append(f"{table.name} [label=<")
         dot_output.append('<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">')
 
-        # Table header with display name
+        # Table header
         dot_output.append(
             f'<TR><TD BGCOLOR="lightblue"><B>{self.display_names[table.name]}</B></TD></TR>'
         )
 
-        # Columns
+        # Group constraints by type
+        pk_constraints = []
+        other_constraints = []
+        for constraint in table.constraints:
+            if constraint.type == "PRIMARY KEY":
+                pk_constraints = constraint.columns
+            else:
+                other_constraints.append(constraint)
+
+        # Columns with inline PK markers
         for column in table.columns:
-            constraints_text = (
-                f" ({', '.join(column.constraints)})" if column.constraints else ""
-            )
+            col_name = column.name
+            if col_name in pk_constraints:
+                col_name = f"{col_name} 🔑"  # Add key emoji for primary keys
+
+            constraints_text = ""
+            if column.constraints and "PRIMARY KEY" not in column.constraints:
+                constraints_text = f" ({', '.join(c for c in column.constraints if c != 'PRIMARY KEY')})"
+
             dot_output.append(
-                f'<TR><TD ALIGN="LEFT"><b>{column.name}</b>: {column.type}{constraints_text}</TD></TR>'
+                f'<TR><TD ALIGN="LEFT" PORT="{column.name}"><B>{col_name}</B>: {column.type}{constraints_text}</TD></TR>'
             )
 
-        # Table-level constraints
-        for constraint in table.constraints:
+        # Add remaining constraints
+        for constraint in other_constraints:
             dot_output.append(
                 f'<TR><TD ALIGN="LEFT" BGCOLOR="#f0f0f0"><I>{constraint.definition}</I></TD></TR>'
             )
@@ -169,10 +180,10 @@ class DotGenerator:
             elif ref_table.upper() in table_names_map:
                 actual_table = table_names_map[ref_table.upper()]
             else:
-                print(f"    Referenced table not found", file=sys.stderr)
+                print("    Referenced table not found", file=sys.stderr)
                 continue
 
-            print(f"    Adding relationship", file=sys.stderr)
+            print("    Adding relationship", file=sys.stderr)
             dot_output.append(
                 f'{table.name} -> {actual_table} [xlabel="{column_name}"];'
             )

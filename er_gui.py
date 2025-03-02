@@ -5,12 +5,10 @@ import sys
 import tempfile
 from datetime import datetime
 from typing import List
-from typing import Set
 from urllib.parse import urlparse
 
 from PySide6.QtCore import QProcess
 from PySide6.QtCore import QRectF
-from PySide6.QtCore import QSettings
 from PySide6.QtCore import QSize
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
