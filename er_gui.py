@@ -1,4 +1,6 @@
+import atexit
 import os
+import os.path
 import sys
 import tempfile
 from datetime import datetime
@@ -12,6 +14,7 @@ from PySide6.QtCore import QSettings
 from PySide6.QtCore import QSize
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
+from PySide6.QtGui import QFont
 from PySide6.QtGui import QIcon
 from PySide6.QtGui import QPainter
 from PySide6.QtSvgWidgets import QGraphicsSvgItem
@@ -71,8 +74,12 @@ class ERDiagramView(QGraphicsView):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        # Store temporary files for cleanup on exit
+        self.temp_files = []
+        atexit.register(self.cleanup_temp_files)
+
         self.setWindowTitle("ER Diagram Viewer")
-        self.resize(1200, 800)
+        self.resize(1500, 800)
 
         # Create main widget and layout
         main_widget = QWidget()
@@ -95,7 +102,7 @@ class MainWindow(QMainWindow):
         prefix_layout = QHBoxLayout()
         prefix_layout.addWidget(QLabel("Table Prefix:"))
         self.prefix_edit = QLineEdit()
-        self.prefix_edit.setText(os.getenv("TABLE_PREFIX", "CyberRange_RESTAPI_"))
+        self.prefix_edit.setText(os.getenv("TABLE_PREFIX", ""))
         self.prefix_edit.textChanged.connect(self.refresh_diagram)
         prefix_layout.addWidget(self.prefix_edit)
         settings_layout.addLayout(prefix_layout)
@@ -118,84 +125,160 @@ class MainWindow(QMainWindow):
         # Set splitter sizes
         splitter.setSizes([300, 900])
 
+        # Set global toolbar style
+        toolbar_style = """
+            QToolBar {
+                spacing: 10px;
+                padding: 5px;
+            }
+            QToolBar QLabel {
+                font-size: 14px;
+                font-weight: bold;
+                margin-left: 10px;
+            }
+            QToolBar QAction {
+                font-size: 14px;
+            }
+        """
+        self.setStyleSheet(toolbar_style)
+
         # Create toolbar with sections
         self.toolbar = self.addToolBar("Tools")
-        self.toolbar.addSeparator()
+        self.toolbar.setIconSize(QSize(32, 32))  # Bigger icons
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)  # Text under icons
 
-        # Set toolbar icon size
-        self.toolbar.setIconSize(QSize(24, 24))
+        # Create larger font for toolbar items
+        toolbar_font = QFont()
+        toolbar_font.setPointSize(14)  # Bigger font size
 
-        # View actions
-        self.toolbar.addWidget(QLabel("View: "))
-        zoom_in_action = QAction(
-            QIcon.fromTheme("zoom-in", QIcon.fromTheme("view-zoom-in")), "Zoom In", self
-        )
-        zoom_in_action.setShortcut("Ctrl++")
+        # Create actions first
+        zoom_in_action = QAction("Zoom In", self)
+        zoom_in_action.setShortcut("Ctrl+=")  # Ctrl + = or else we have to press shift
         zoom_in_action.triggered.connect(lambda: self.diagram_view.scale(1.2, 1.2))
-        self.toolbar.addAction(zoom_in_action)
 
-        zoom_out_action = QAction(
-            QIcon.fromTheme("zoom-out", QIcon.fromTheme("view-zoom-out")),
-            "Zoom Out",
-            self,
-        )
+        zoom_out_action = QAction("Zoom Out", self)
         zoom_out_action.setShortcut("Ctrl+-")
         zoom_out_action.triggered.connect(lambda: self.diagram_view.scale(0.8, 0.8))
-        self.toolbar.addAction(zoom_out_action)
 
-        fit_action = QAction(
-            QIcon.fromTheme("zoom-fit-best", QIcon.fromTheme("view-fullscreen")),
-            "Fit View",
-            self,
-        )
+        fit_action = QAction("Fit View", self)
         fit_action.setShortcut("Ctrl+0")
         fit_action.triggered.connect(self.fit_view)
+
+        select_all_action = QAction("Select All", self)
+        select_all_action.setShortcut("Ctrl+A")
+        select_all_action.triggered.connect(self.select_all_tables)
+
+        deselect_all_action = QAction("Deselect All", self)
+        deselect_all_action.setShortcut("Ctrl+D")
+        deselect_all_action.triggered.connect(self.deselect_all_tables)
+
+        refresh_action = QAction("Refresh", self)
+        refresh_action.setShortcut("F5")
+        refresh_action.triggered.connect(self.refresh_diagram)
+
+        export_action = QAction("Export", self)
+        export_action.setShortcut("Ctrl+S")
+        export_action.triggered.connect(self.export_diagram)
+
+        self.show_referenced_action = QAction("Show Referenced Tables", self)
+        self.show_referenced_action.setCheckable(True)
+        self.show_referenced_action.setChecked(False)
+        self.show_referenced_action.triggered.connect(self.refresh_diagram)
+
+        # Helper function to load icons with proper color
+        def load_icon(name: str) -> QIcon:
+            icon_path = os.path.join(os.path.dirname(__file__), "icons", f"{name}.svg")
+            if not os.path.exists(icon_path):
+                print(f"Warning: Icon file not found: {icon_path}", file=sys.stderr)
+                return QIcon()
+
+            try:
+                # Read SVG content
+                with open(icon_path, "r", encoding="utf-8") as f:
+                    svg_content = f.read()
+
+                # Ensure XML declaration is present
+                if not svg_content.startswith("<?xml"):
+                    svg_content = (
+                        '<?xml version="1.0" encoding="UTF-8"?>\n' + svg_content
+                    )
+
+                # Replace currentColor with actual color from palette
+                # color = self.palette().text().color().name()
+                svg_content = svg_content.replace("currentColor", "gray")
+
+                # Create temporary file with modified SVG
+                fd, tmp_path = tempfile.mkstemp(suffix=".svg")
+                os.write(fd, svg_content.encode("utf-8"))
+                os.close(fd)
+
+                # Keep track of temporary file for cleanup
+                self.temp_files.append(tmp_path)
+
+                return QIcon(tmp_path)
+
+            except Exception as e:
+                print(f"Error loading icon {name}: {e}", file=sys.stderr)
+                return QIcon()
+
+        # Update changeEvent to handle theme changes
+        def changeEvent(self, event):
+            if event.type() == Qt.ApplicationPaletteChange:
+                # Reload all toolbar icons
+                for action in self.toolbar.actions():
+                    if action.icon():
+                        icon_name = action.data()  # Store icon name in action data
+                        if icon_name:
+                            action.setIcon(load_icon(icon_name))
+            super().changeEvent(event)
+
+        # Store icon names in action data for reloading
+        for name, action in [
+            ("zoom-in", zoom_in_action),
+            ("zoom-out", zoom_out_action),
+            ("zoom-fit-best", fit_action),
+            ("dialog-ok-apply", select_all_action),
+            ("edit-clear", deselect_all_action),
+            ("view-refresh", refresh_action),
+            ("document-save", export_action),
+            ("dialog-ok", self.show_referenced_action),
+        ]:
+            action.setData(name)
+            action.setIcon(load_icon(name))
+
+        # View actions section
+        section_label = QLabel("View: ")
+        section_label.setFont(toolbar_font)
+        self.toolbar.addWidget(section_label)
+
+        self.toolbar.addAction(zoom_in_action)
+
+        self.toolbar.addAction(zoom_out_action)
+
         self.toolbar.addAction(fit_action)
 
         self.toolbar.addSeparator()
 
         # Selection actions
-        self.toolbar.addWidget(QLabel("Selection: "))
-        select_all_action = QAction(
-            QIcon.fromTheme("edit-select-all"), "Select All", self
-        )
-        select_all_action.setShortcut("Ctrl+A")
-        select_all_action.triggered.connect(self.select_all_tables)
+        section_label = QLabel("Selection: ")
+        section_label.setFont(toolbar_font)
+        self.toolbar.addWidget(section_label)
+
         self.toolbar.addAction(select_all_action)
 
-        deselect_all_action = QAction(
-            QIcon.fromTheme("edit-clear", QIcon.fromTheme("edit-delete")),
-            "Deselect All",
-            self,
-        )
-        deselect_all_action.setShortcut("Ctrl+D")
-        deselect_all_action.triggered.connect(self.deselect_all_tables)
         self.toolbar.addAction(deselect_all_action)
 
         self.toolbar.addSeparator()
 
         # Diagram actions
-        self.toolbar.addWidget(QLabel("Diagram: "))
-        refresh_action = QAction(QIcon.fromTheme("view-refresh"), "Refresh", self)
-        refresh_action.setShortcut("F5")
-        refresh_action.triggered.connect(self.refresh_diagram)
+        section_label = QLabel("Diagram: ")
+        section_label.setFont(toolbar_font)
+        self.toolbar.addWidget(section_label)
+
         self.toolbar.addAction(refresh_action)
 
-        export_action = QAction(
-            QIcon.fromTheme("document-save", QIcon.fromTheme("filesave")),
-            "Export",
-            self,
-        )
-        export_action.setShortcut("Ctrl+S")
-        export_action.triggered.connect(self.export_diagram)
         self.toolbar.addAction(export_action)
 
-        self.show_referenced_action = QAction(
-            QIcon.fromTheme("view-list-tree"), "Show Referenced Tables", self
-        )
-        self.show_referenced_action.setCheckable(True)
-        self.show_referenced_action.setChecked(False)
-        self.show_referenced_action.triggered.connect(self.refresh_diagram)
         self.toolbar.addAction(self.show_referenced_action)
 
         self.db_name = "unknown"
@@ -355,6 +438,17 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             print(f"Error exporting diagram: {e}", file=sys.stderr)
+
+    def cleanup_temp_files(self):
+        """Clean up temporary files on application exit"""
+        for tmp_file in self.temp_files:
+            try:
+                if os.path.exists(tmp_file):
+                    os.unlink(tmp_file)
+            except Exception as e:
+                print(
+                    f"Error cleaning up temporary file {tmp_file}: {e}", file=sys.stderr
+                )
 
 
 def main():
