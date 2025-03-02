@@ -141,13 +141,13 @@ class ToolbarManager:
                     svg_content = f.read()
 
                 # Replace color based on theme
-                color = "#FFFFFF" if is_dark else "#000000"
+                color = "#F1F1F1" if is_dark else "#000000"
                 if "fill" in svg_content:
                     svg_content = svg_content.replace(
                         'fill="currentColor"', f'fill="{color}"'
                     )
                     svg_content = svg_content.replace(
-                        "stroke:currentColor", f'stroke:"{color}"'
+                        "stroke:currentColor", f"stroke:{color}"
                     )
                     svg_content = svg_content.replace('fill="#fff"', f'fill="{color}"')
                     svg_content = svg_content.replace(
