@@ -49,8 +49,8 @@ class StatusBarManager:
         try:
             text = self.zoom_edit.text().rstrip("%")
             percentage = float(text)
-            if percentage <= 0:
-                raise ValueError("Zoom must be positive")
+            if percentage < 8 or percentage > 300:
+                raise ValueError("Zoom must be between 8% and 300%")
 
             current_zoom = self.main_window.diagram_view.zoom_level * 100
             factor = percentage / current_zoom
@@ -63,8 +63,8 @@ class StatusBarManager:
         try:
             text = self.zoom_edit.text().rstrip("%")
             percentage = float(text)
-            if percentage <= 0:
-                raise ValueError("Zoom must be positive")
+            if percentage < 8 or percentage > 300:
+                raise ValueError("Zoom must be between 8% and 300%")
 
             current_zoom = self.main_window.diagram_view.zoom_level * 100
             factor = percentage / current_zoom

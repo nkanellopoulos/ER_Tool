@@ -181,9 +181,23 @@ class MainWindow(QMainWindow):
     def fit_view(self):
         """Fit diagram to view"""
         if self.diagram_view.scene():
-            self.diagram_view.fitInView(
-                self.diagram_view.scene().itemsBoundingRect(), Qt.KeepAspectRatio
-            )
+            # Calculate the scaling that would be applied
+            scene_rect = self.diagram_view.scene().itemsBoundingRect()
+            view_rect = self.diagram_view.viewport().rect()
+
+            # Calculate scale factors for both dimensions
+            scale_x = view_rect.width() / scene_rect.width()
+            scale_y = view_rect.height() / scene_rect.height()
+            scale = min(scale_x, scale_y)
+
+            # Only fit if the resulting zoom would be within bounds
+            if 0.08 <= scale <= 3.0:
+                self.diagram_view.fitInView(scene_rect, Qt.KeepAspectRatio)
+            else:
+                # If outside bounds, scale to nearest valid zoom level
+                scale = max(0.08, min(3.0, scale))
+                self.diagram_view.resetTransform()
+                self.diagram_view.scale(scale, scale)
 
     def _zoom_100(self):
         """Set zoom level to 100%"""
@@ -266,7 +280,18 @@ class MainWindow(QMainWindow):
 
             # Reset transform before fitting to view
             self.diagram_view.resetTransform()
-            self.diagram_view.fitInView(svg_item, Qt.KeepAspectRatio)
+
+            # Calculate the scaling that would be applied
+            scene_rect = QRectF(svg_item.boundingRect())
+            view_rect = self.diagram_view.viewport().rect()
+
+            scale_x = view_rect.width() / scene_rect.width()
+            scale_y = view_rect.height() / scene_rect.height()
+            scale = min(scale_x, scale_y)
+
+            # Apply scaling within bounds
+            scale = max(0.08, min(3.0, scale))
+            self.diagram_view.scale(scale, scale)
 
             # Cleanup temporary files
             os.unlink(dot_path)
