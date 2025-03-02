@@ -14,6 +14,7 @@ class ConnectionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Database Connection")
+        self.setFixedWidth(300)
 
         # Just make it non-modal and ensure cleanup
         self.setModal(False)

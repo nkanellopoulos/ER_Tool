@@ -1,7 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel
 from PySide6.QtWidgets import QLineEdit
-from PySide6.QtWidgets import QStatusBar
 
 
 class StatusBarManager:
@@ -13,6 +12,12 @@ class StatusBarManager:
 
     def _setup_widgets(self):
         """Create and setup status bar widgets"""
+        # Add prefix edit
+        self.prefix_label = QLabel("  Remove table prefix:")
+        self.prefix_edit = QLineEdit()
+        self.prefix_edit.setFixedWidth(160)
+
+        # Other widgets
         self.db_type = QLabel()
         self.user = QLabel()
         self.schema = QLabel()
@@ -24,14 +29,17 @@ class StatusBarManager:
         self.zoom_edit.setText("100%")
 
         # Add all widgets to status bar
+        self.status_bar.addWidget(self.prefix_label)
+        self.status_bar.addWidget(self.prefix_edit)
+        self.status_bar.addWidget(QLabel("  "))
         self.status_bar.addWidget(self.db_type)
-        self.status_bar.addWidget(QLabel("|"))
+        self.status_bar.addWidget(QLabel(" ♦︎ "))
         self.status_bar.addWidget(self.user)
-        self.status_bar.addWidget(QLabel("|"))
+        self.status_bar.addWidget(QLabel(" ♦︎ "))
         self.status_bar.addWidget(self.schema)
-        self.status_bar.addWidget(QLabel("|"))
+        self.status_bar.addWidget(QLabel(" ♦︎ "))
         self.status_bar.addWidget(self.tables)
-        self.status_bar.addWidget(QLabel("|"))
+        self.status_bar.addWidget(QLabel(" ♦︎ "))
         self.status_bar.addWidget(QLabel("Zoom:"))
         self.status_bar.addWidget(self.zoom_edit)
 
@@ -77,7 +85,19 @@ class StatusBarManager:
         self, db_type="", user="", schema="", total=0, selected=0
     ):
         """Update database connection information"""
-        self.db_type.setText(f"DB: {db_type}")
+        self.db_type.setText(f"RDBMS: {db_type}")
         self.user.setText(f"User: {user}")
         self.schema.setText(f"Schema: {schema}")
         self.tables.setText(f"Tables: {selected}/{total}")
+
+    def get_prefix(self) -> str:
+        """Get current prefix value"""
+        return self.prefix_edit.text()
+
+    def set_prefix(self, prefix: str):
+        """Set prefix value"""
+        self.prefix_edit.setText(prefix)
+
+    def set_prefix_handler(self, handler):
+        """Set handler for prefix changes"""
+        self.prefix_edit.returnPressed.connect(handler)
