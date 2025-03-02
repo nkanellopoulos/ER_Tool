@@ -43,7 +43,6 @@ class SchemaReader:
         if connection_string.startswith("postgresql://"):
             return PostgresReader()
         elif connection_string.startswith("mysql://"):
-            print("Warning: MySQL support is not implemented yet", file=sys.stderr)
             return MySQLReader()
         else:
             raise ValueError("Unsupported database type")
