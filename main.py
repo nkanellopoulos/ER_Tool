@@ -26,7 +26,7 @@ def parse_ddl(ddl):
         re.IGNORECASE | re.MULTILINE,
     )
     fk_pattern = re.compile(r'\s+REFERENCES\s+(?:\w+\.)?"?(\w+)"?', re.IGNORECASE)
-    unique_pattern = re.compile(r"unique\s*\((.*?)\)", re.IGNORECASE)
+
     multi_col_constraint_pattern = re.compile(
         r'CONSTRAINT\s+"\w+"\s+UNIQUE\s*\((.*?)\)', re.IGNORECASE
     )
@@ -41,7 +41,6 @@ def parse_ddl(ddl):
         }
 
         table_def = match.group(2)
-        table_constraints = {}
         multi_column_fields = (
             set()
         )  # Track fields that are part of multi-column constraints
