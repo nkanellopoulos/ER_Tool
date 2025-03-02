@@ -18,7 +18,7 @@ def read_ddl_input(file_path=None):
 def main():
     try:
         # Try database connection first
-        conn_string = os.getenv("DB_CONNECTION")
+        conn_string = os.getenv("ER_DB_CONNECTION")
         if conn_string:
             try:
                 tables = SchemaReader.from_database(conn_string)
