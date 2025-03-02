@@ -17,16 +17,26 @@ class ERDiagramView(QGraphicsView):
     def wheelEvent(self, event):
         """Handle mouse wheel for panning and zooming"""
         if event.modifiers() & Qt.ControlModifier:
-            factor = 1.1 if event.angleDelta().y() > 0 else 1.0 / 1.1
-            self.scale(factor, factor)
+            # Calculate zoom based on delta for smoother increments
+            delta = event.angleDelta().y()
+            factor = pow(1.05, delta / 120.0)  # Smooth exponential zoom
+
+            new_zoom = self.zoom_level * factor
+            if 0.08 <= new_zoom <= 3.0:
+                self.scale(factor, factor)
+                self.zoom_level = new_zoom
+                if hasattr(self, "on_zoom_changed"):
+                    self.on_zoom_changed(self.zoom_level)
+            event.accept()
         else:
+            # Make scrolling smoother too
             if event.modifiers() & Qt.ShiftModifier:
-                delta = event.angleDelta().y()
+                delta = event.angleDelta().y() / 2
                 self.horizontalScrollBar().setValue(
                     self.horizontalScrollBar().value() - delta
                 )
             else:
-                delta = event.angleDelta().y()
+                delta = event.angleDelta().y() / 2
                 self.verticalScrollBar().setValue(
                     self.verticalScrollBar().value() - delta
                 )

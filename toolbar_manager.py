@@ -26,13 +26,21 @@ class ToolbarManager:
             "Zoom In",
             "zoom-in",
             "Ctrl+=",
-            lambda: self.main_window.diagram_view.scale(1.4, 1.4),
+            lambda: (
+                self.main_window.diagram_view.scale(1.15, 1.15)
+                if self.main_window.diagram_view.zoom_level * 1.15 <= 3.0
+                else None
+            ),
         )
         self.zoom_out_action = self._create_action(
             "Zoom Out",
             "zoom-out",
             "Ctrl+-",
-            lambda: self.main_window.diagram_view.scale(0.8, 0.8),
+            lambda: (
+                self.main_window.diagram_view.scale(0.87, 0.87)
+                if self.main_window.diagram_view.zoom_level * 0.87 >= 0.08
+                else None
+            ),
         )
         self.zoom_100_action = self._create_action(
             "100%", "zoom-100", "Ctrl+1", self.main_window._zoom_100
