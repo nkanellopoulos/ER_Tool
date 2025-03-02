@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import List
 from urllib.parse import urlparse
 
+from PySide6.QtCore import QEvent
 from PySide6.QtCore import QProcess
 from PySide6.QtCore import QRectF
 from PySide6.QtCore import Qt
@@ -85,21 +86,19 @@ class MainWindow(QMainWindow):
             self.connection_string = ""
             self.update_status_bar()
 
-        # Create connection action
-        connect_action = QAction("Connect to Database", self)
-        connect_action.setShortcut("Ctrl+B")  # B for database
-        connect_action.triggered.connect(self.show_connection_dialog)
-
-        # Add to menu and toolbar
-        database_menu = menubar.addMenu("&Database")
-        database_menu.addAction(connect_action)
-
         # Disconnect auto-refresh during bulk operations
         self.auto_refresh = True
         self.table_tree.itemChanged.connect(self.on_table_selection_changed)
 
         # Hook up zoom tracking
         self.diagram_view.on_zoom_changed = self._update_zoom_label
+
+    def changeEvent(self, event):
+        """Handle palette changes for dark mode"""
+        if event.type() == QEvent.Type.PaletteChange:
+            # Force toolbar to update icons
+            self.toolbar_manager.toolbar.update()
+        super().changeEvent(event)
 
     def _setup_menus(self, menubar):
         """Setup application menus"""
@@ -111,6 +110,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.toolbar_manager.fit_action)
         view_menu.addSeparator()
         view_menu.addAction(self.toolbar_manager.show_referenced_action)
+        view_menu.addAction(self.toolbar_manager.overview_action)
 
         # Selection menu
         selection_menu = menubar.addMenu("&Selection")
@@ -233,6 +233,7 @@ class MainWindow(QMainWindow):
             dot_content = generator.generate(
                 exclude_tables=self.get_excluded_tables(),
                 show_referenced=self.show_referenced_action.isChecked(),
+                overview_mode=self.toolbar_manager.overview_action.isChecked(),
             )
 
             # Create temporary files
@@ -370,6 +371,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

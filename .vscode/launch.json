@@ -1,0 +1,21 @@
+{
+    "configurations": [
+      {
+        "type": "debugpy",
+        "request": "launch",
+        "name": "Launch Program",
+        "program": "${workspaceFolder}/${input:programName}"
+      }
+    ],
+    "inputs": [
+      {
+        "type": "pickString",
+        "id": "programName",
+        "description": "Select the Python file to launch",
+        "options": [
+          "ER_Tool.py",
+          "main.py"          
+        ]
+      }
+    ]
+  }
