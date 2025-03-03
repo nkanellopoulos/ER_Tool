@@ -363,7 +363,8 @@ class MainWindow(QMainWindow):
                     total=total,
                     selected=selected,
                 )
-            except:
+            except Exception as e:
+                print(f"Error updating status bar: {e}", file=sys.stderr)
                 self.status_bar_manager.update_connection_info()
         else:
             self.status_bar_manager.update_connection_info()
