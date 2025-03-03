@@ -29,9 +29,7 @@ class DotGenerator:
             return []
 
         # Sort and format table names for display
-        excluded = sorted(
-            t.replace("CyberRange_RESTAPI_", "..._") for t in excluded_tables
-        )
+        excluded = sorted(self._get_display_name(t) for t in excluded_tables)
 
         dot_output = [
             "note [label=<",
