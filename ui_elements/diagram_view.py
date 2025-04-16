@@ -1,18 +1,50 @@
 from PySide6.QtCore import QRectF
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush
+from PySide6.QtGui import QColor
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QGraphicsScene
 from PySide6.QtWidgets import QGraphicsView
 
 
+class DarkModeGraphicsScene(QGraphicsScene):
+    """A custom scene that supports dark mode"""
+
+    def __init__(self):
+        super().__init__()
+        self.dark_mode = False
+        self.setBackgroundBrush(QBrush(QColor(255, 255, 255)))  # Default white
+
+    def set_dark_mode(self, enabled: bool):
+        """Set dark mode state - using 50% gray for dark mode"""
+        if self.dark_mode == enabled:
+            # Don't do anything if dark mode hasn't changed
+            return
+
+        self.dark_mode = enabled
+        if enabled:
+            # Use 50% gray for dark mode to match DOT background
+            self.setBackgroundBrush(QBrush(QColor(128, 128, 128)))  # 50% gray (#808080)
+        else:
+            # White background for light mode
+            self.setBackgroundBrush(QBrush(QColor(255, 255, 255)))
+
+        # Force update the entire scene
+        self.update()
+
+
 class ERDiagramView(QGraphicsView):
     def __init__(self):
         super().__init__()
-        self.setScene(QGraphicsScene())
+        # Create a custom scene that supports dark mode
+        self.setScene(DarkModeGraphicsScene())
         self.setRenderHint(QPainter.Antialiasing)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.zoom_level = 1.0
+
+        # Dark mode property
+        self.dark_canvas = False
 
     def wheelEvent(self, event):
         """Handle mouse wheel for panning and zooming"""
@@ -42,11 +74,18 @@ class ERDiagramView(QGraphicsView):
                 )
 
     def scale(self, sx: float, sy: float):
-        """Override scale to track zoom level"""
-        super().scale(sx, sy)
-        self.zoom_level *= sx
-        if hasattr(self, "on_zoom_changed"):
-            self.on_zoom_changed(self.zoom_level)
+        """Override scale to track zoom level properly"""
+        # Only apply the scale if it would keep us within reasonable bounds
+        new_zoom = self.zoom_level * sx
+        if 0.05 <= new_zoom <= 5.0:
+            super().scale(sx, sy)
+            self.zoom_level = new_zoom
+            if hasattr(self, "on_zoom_changed") and self.on_zoom_changed:
+                self.on_zoom_changed(self.zoom_level)
+        else:
+            print(
+                f"Ignoring scale operation - would result in zoom level {new_zoom:.2f}"
+            )
 
     def resetTransform(self):
         """Override resetTransform to reset zoom level"""
@@ -64,3 +103,12 @@ class ERDiagramView(QGraphicsView):
         self.zoom_level = transform.m11()
         if hasattr(self, "on_zoom_changed"):
             self.on_zoom_changed(self.zoom_level)
+
+    def set_dark_canvas(self, enabled: bool):
+        """Enable or disable dark canvas mode"""
+        self.dark_canvas = enabled
+        # Update the scene background
+        if isinstance(self.scene(), DarkModeGraphicsScene):
+            self.scene().set_dark_mode(enabled)
+            # Force a repaint
+            self.viewport().update()

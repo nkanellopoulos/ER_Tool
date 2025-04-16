@@ -11,6 +11,8 @@
 
 ## Features
 
+- (**new**) Search for strings in fields and table names
+- (**new**) Dark in the diagram rendering
 - Interactive table filrering (add/remove to the diagram)
 - Remove long table prefixes
 - Export diagrams as SVG/PNG/PDF

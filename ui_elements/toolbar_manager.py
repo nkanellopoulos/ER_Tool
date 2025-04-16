@@ -69,6 +69,16 @@ class ToolbarManager:
             "Fit View", "zoom-fit-best", "Ctrl+0", self.main_window.fit_view
         )
 
+        # Add a dark canvas mode action
+        self.dark_canvas_action = self._create_action(
+            "Dark Canvas",
+            "night-mode",  # You may need to add this icon
+            "Ctrl+Shift+D",
+            self.main_window.toggle_dark_canvas,
+        )
+        self.dark_canvas_action.setCheckable(True)
+        self.dark_canvas_action.setChecked(False)
+
         # Selection actions
         self.select_all_action = self._create_action(
             "Select All",
@@ -134,6 +144,7 @@ class ToolbarManager:
         self.toolbar.addAction(self.zoom_out_action)
         self.toolbar.addAction(self.zoom_100_action)
         self.toolbar.addAction(self.fit_action)
+        self.toolbar.addAction(self.dark_canvas_action)  # Add dark canvas option
         self.toolbar.addSeparator()
 
         # Selection section

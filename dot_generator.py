@@ -21,6 +21,12 @@ class DotGenerator:
         self.display_names = {
             name: self._get_display_name(name) for name in tables.keys()
         }
+        # Set the default to false: don't show excluded tables note
+        self.draw_excluded_tables_note = False
+        # Dark mode settings
+        self.dark_mode = False
+        # Highlight color for matched tables/fields (light blue instead of goldenrod)
+        self.highlight_color = "dodgerblue"
 
     def _get_display_name(self, table_name: str) -> str:
         """Convert full table name to display name"""
@@ -68,6 +74,7 @@ class DotGenerator:
         matching_tables: Set[str] = None,
         matching_fields: Dict[str, List[str]] = None,
         show_only_filtered: bool = False,  # Add show_only_filtered parameter
+        dark_mode: bool = False,  # Add dark mode parameter
     ) -> str:
         """
         Generate DOT format output from table definitions
@@ -79,7 +86,11 @@ class DotGenerator:
             matching_tables: Set of table names that match the filter
             matching_fields: Dictionary mapping table names to lists of field names that match the filter
             show_only_filtered: Whether to show only tables matching the filter
+            dark_mode: Whether to use dark mode colors
         """
+        # Save dark mode setting
+        self.dark_mode = dark_mode
+
         # Reduced logging to help track real issues
         if exclude_tables is None:
             exclude_tables = []
@@ -95,24 +106,53 @@ class DotGenerator:
         if show_only_filtered and matching_tables:
             tables = {k: v for k, v in tables.items() if k in matching_tables}
 
-        # Start DOT file
-        dot_output = [
-            "digraph ERD {",
-            "rankdir=TB;",
-            "graph [splines=ortho, nodesep=1.2, ranksep=1.2];",
-            f'node [shape=none, fontsize=12, fontname="{DEFAULT_FONT}"];',
-            f'edge [fontname="{DEFAULT_FONT}"];',
-            # Add title with box
-            'labelloc="t";',
-            'label=<<TABLE BORDER="1" CELLBORDER="0" CELLPADDING="10">',
-            '<TR><TD BGCOLOR="#e8e8e8">',
-            f'<FONT POINT-SIZE="24">{self._generate_title(len(self.tables), len(tables))}</FONT>',
-            "</TD></TR>",
-            "</TABLE>>;",
-        ]
+        # Start DOT file with appropriate colors based on mode
+        if dark_mode:
+            # Dark mode: 50% gray background, but keep arrows black
+            dot_output = [
+                "digraph ERD {",
+                "rankdir=TB;",
+                'bgcolor="#808080";',  # 50% gray background
+                "graph [splines=ortho, nodesep=1.2, ranksep=1.2];",
+                f'node [shape=none, fontsize=12, fontname="{DEFAULT_FONT}"];',
+                f'edge [fontname="{DEFAULT_FONT}"];',  # Keep arrows black in dark mode
+            ]
+        else:
+            # Light mode: default white background, black arrows
+            dot_output = [
+                "digraph ERD {",
+                "rankdir=TB;",
+                "graph [splines=ortho, nodesep=1.2, ranksep=1.2];",
+                f'node [shape=none, fontsize=12, fontname="{DEFAULT_FONT}"];',
+                f'edge [fontname="{DEFAULT_FONT}"];',
+            ]
 
-        # Add excluded tables note at the beginning
-        if exclude_tables:
+        # Add title with box - darker in dark mode
+        if dark_mode:
+            dot_output.extend(
+                [
+                    'labelloc="t";',
+                    'label=<<TABLE BORDER="1" CELLBORDER="0" CELLPADDING="10">',
+                    '<TR><TD BGCOLOR="#404040">',  # Darker background for title in dark mode
+                    f'<FONT POINT-SIZE="24" COLOR="white">{self._generate_title(len(self.tables), len(tables))}</FONT>',
+                    "</TD></TR>",
+                    "</TABLE>>;",
+                ]
+            )
+        else:
+            dot_output.extend(
+                [
+                    'labelloc="t";',
+                    'label=<<TABLE BORDER="1" CELLBORDER="0" CELLPADDING="10">',
+                    '<TR><TD BGCOLOR="#e8e8e8">',
+                    f'<FONT POINT-SIZE="24">{self._generate_title(len(self.tables), len(tables))}</FONT>',
+                    "</TD></TR>",
+                    "</TABLE>>;",
+                ]
+            )
+
+        # Add excluded tables note only if enabled and there are excluded tables
+        if self.draw_excluded_tables_note and exclude_tables:
             dot_output.extend(self._generate_excluded_tables_note(exclude_tables))
 
         # Add filter status note if filtered view is active
@@ -197,33 +237,36 @@ class DotGenerator:
 
         dot_output = []
         # Set the table border color and width based on highlight status
-        border_color = "red" if highlight else "black"
+        # Always use black borders (or highlight color for highlighted tables) regardless of dark mode
+        border_color = self.highlight_color if highlight else "black"
         border_width = 3 if highlight else 1
 
-        # Determine if the table name should be highlighted (red) based on the highlight flag
-        table_name_color = "red" if highlight else "black"
+        # Determine if the table name should be highlighted based on the highlight flag
+        table_name_color = self.highlight_color if highlight else "black"
         table_name_style = ' style="bold"' if highlight else ""
 
         # Add the node with HTML table label
         dot_output.append(f"{table.name} [label=<")
 
         # Main table tag with border color for the outer border
+        # Set CELLBORDER=0 to disable the default cell borders
         dot_output.append(
-            f'<TABLE BORDER="{border_width}" CELLSPACING="0" COLOR="{border_color}">'
+            f'<TABLE BORDER="{border_width}" CELLSPACING="0" CELLBORDER="0" COLOR="{border_color}">'
         )
 
         if overview_mode:
             # Overview mode: simple square node with fixed size and yellow background
+            # Keep table backgrounds white in dark mode
+            bg_color = "lightyellow"
             dot_output.append(
-                f'<TR><TD BGCOLOR="lightyellow" WIDTH="170" HEIGHT="240">'
+                f'<TR><TD BGCOLOR="{bg_color}" WIDTH="170" HEIGHT="240">'
                 f'<FONT COLOR="{table_name_color}"{table_name_style}><B>{self.display_names[table.name]}</B></FONT>'
                 f"</TD></TR>"
             )
         else:
-            # Detailed mode: show all columns and constraints
-            # Table header - highlight the table name if it matches the filter
+            # Table header with custom border
             dot_output.append(
-                f'<TR><TD BGCOLOR="lightblue" BORDER="1">'
+                f'<TR><TD BGCOLOR="lightblue" BORDER="1" COLOR="black">'
                 f'<FONT COLOR="{table_name_color}"{table_name_style}><B>{self.display_names[table.name]}</B></FONT>'
                 f"</TD></TR>"
             )
@@ -237,7 +280,7 @@ class DotGenerator:
                 else:
                     other_constraints.append(constraint)
 
-            # Columns with inline PK markers
+            # Columns with inline PK markers - always use black borders
             for column in table.columns:
                 col_name = column.name
                 if col_name in pk_constraints:
@@ -247,21 +290,23 @@ class DotGenerator:
                 if column.constraints and "PRIMARY KEY" not in column.constraints:
                     constraints_text = f" ({', '.join(c for c in column.constraints if c != 'PRIMARY KEY')})"
 
-                # Highlight matching fields with red text
-                font_color = "red" if column.name in matching_fields else "black"
+                # Highlight matching fields with the highlight color
+                font_color = (
+                    self.highlight_color if column.name in matching_fields else "black"
+                )
                 font_style = ' style="bold"' if column.name in matching_fields else ""
 
-                # Add BORDER="1" to keep the cell borders
+                # Explicitly set cell border to black
                 dot_output.append(
-                    f'<TR><TD ALIGN="LEFT" PORT="{column.name}" BORDER="1">'
+                    f'<TR><TD ALIGN="LEFT" PORT="{column.name}" BGCOLOR="white" BORDER="1" COLOR="black">'
                     f'<FONT COLOR="{font_color}" FACE="{DEFAULT_FONT}"{font_style}><B>{col_name}</B>: {column.type}{constraints_text}</FONT>'
                     f"</TD></TR>"
                 )
 
-            # Add remaining constraints with border
+            # Add remaining constraints with border - keep light bg and use black borders
             for constraint in other_constraints:
                 dot_output.append(
-                    f'<TR><TD ALIGN="LEFT" BGCOLOR="#f0f0f0" BORDER="1"><I>{constraint.definition}</I></TD></TR>'
+                    f'<TR><TD ALIGN="LEFT" BGCOLOR="#f0f0f0" BORDER="1" COLOR="black"><I>{constraint.definition}</I></TD></TR>'
                 )
 
         dot_output.append("</TABLE>>];")
@@ -287,7 +332,9 @@ class DotGenerator:
             else:
                 continue
 
+            # Keep arrows black in both modes for better readability
             dot_output.append(
                 f'{table.name} -> {actual_table} [xlabel="{column_name}"];'
             )
+
         return dot_output
