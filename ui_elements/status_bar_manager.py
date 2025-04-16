@@ -7,6 +7,8 @@ class StatusBarManager:
     def __init__(self, main_window):
         self.main_window = main_window
         self.status_bar = main_window.statusBar()
+        self.prefix_handler = None
+        self._handling_prefix = False
         self._setup_widgets()
         self._setup_connections()
 
@@ -46,6 +48,7 @@ class StatusBarManager:
     def _setup_connections(self):
         """Setup signal connections"""
         self.zoom_edit.returnPressed.connect(self._on_zoom_edit)
+        self.prefix_edit.returnPressed.connect(self.handle_prefix_edit)
 
     def update_zoom(self, zoom_level: float):
         """Update zoom level display"""
@@ -100,4 +103,39 @@ class StatusBarManager:
 
     def set_prefix_handler(self, handler):
         """Set handler for prefix changes"""
-        self.prefix_edit.returnPressed.connect(handler)
+        self.prefix_handler = handler
+
+    def handle_prefix_edit(self):
+        """Handle prefix edit box activation"""
+        # Set a flag to prevent recursive calls
+        if self._handling_prefix:
+            print("Preventing recursive prefix handling")
+            return
+
+        # Get prefix value to check for actual changes
+        new_prefix = self.prefix_edit.text()
+        old_prefix = getattr(self, "_last_prefix", "")
+
+        # Only refresh if the prefix actually changed
+        if new_prefix == old_prefix:
+            print(f"Prefix unchanged: {new_prefix!r}")
+            return
+
+        # Store last prefix
+        self._last_prefix = new_prefix
+
+        # Block all signals from the main window during prefix handling
+        self.main_window.blockSignals(True)
+
+        self._handling_prefix = True
+        try:
+            print(f"Prefix changed to: {new_prefix!r}")
+            # Just call the main window's method directly
+            if hasattr(self.main_window, "_on_prefix_edit"):
+                self.main_window._on_prefix_edit()
+            elif self.prefix_handler:
+                self.prefix_handler()
+        finally:
+            self._handling_prefix = False
+            # Unblock signals
+            self.main_window.blockSignals(False)

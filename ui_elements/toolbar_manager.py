@@ -3,10 +3,12 @@ import sys
 import tempfile
 
 from PySide6.QtCore import QSize
-from PySide6.QtCore import Qt  # Add this import
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLineEdit
+from PySide6.QtWidgets import QSizePolicy
 
 
 class ToolbarManager:
@@ -15,6 +17,14 @@ class ToolbarManager:
         self.toolbar = main_window.addToolBar("Tools")
         self.toolbar.setIconSize(QSize(32, 32))
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+
+        # Initialize filter edit field
+        self.filter_edit = QLineEdit(main_window)
+        self.filter_edit.setPlaceholderText("Filter tables and fields...")
+        self.filter_edit.setClearButtonEnabled(True)
+        # Set stricter width constraints for filter textbox
+        self.filter_edit.setMinimumWidth(200)
+        self.filter_edit.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
 
         # Create all actions
         self._create_actions()
@@ -88,8 +98,31 @@ class ToolbarManager:
         )
         self.overview_action.setCheckable(True)
 
+        # Change "Show only filtered" to a simple action button (not checkable)
+        self.show_filtered_action = self._create_action(
+            "Show Only Filtered",
+            "view-filter",
+            "Ctrl+F",
+            self.main_window.show_only_filtered_tables,
+        )
+
+        # Add a new "Add Filtered" button
+        self.add_filtered_action = self._create_action(
+            "Add Filtered",
+            "list-add",  # Using a standard add icon
+            "Ctrl+Shift+F",
+            self.main_window.add_filtered_tables,
+        )
+
     def _setup_toolbar(self):
         """Setup toolbar layout"""
+        # Filter section first
+        self.toolbar.addWidget(QLabel("Filter: "))
+        self.toolbar.addWidget(self.filter_edit)
+        self.toolbar.addAction(self.show_filtered_action)
+        self.toolbar.addAction(self.add_filtered_action)  # Add the new button
+        self.toolbar.addSeparator()
+
         # Database section
         self.toolbar.addWidget(QLabel("Database: "))
         self.toolbar.addAction(self.connect_action)
