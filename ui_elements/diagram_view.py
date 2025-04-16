@@ -23,11 +23,11 @@ class DarkModeGraphicsScene(QGraphicsScene):
 
         self.dark_mode = enabled
         if enabled:
-            # Use 50% gray for dark mode to match DOT background
-            self.setBackgroundBrush(QBrush(QColor(128, 128, 128)))  # 50% gray (#808080)
+            # Use gray for dark mode to match DOT background
+            self.setBackgroundBrush(QBrush(QColor(180, 180, 180)))
         else:
             # White background for light mode
-            self.setBackgroundBrush(QBrush(QColor(255, 255, 255)))
+            self.setBackgroundBrush(QBrush(QColor(250, 250, 250)))
 
         # Force update the entire scene
         self.update()

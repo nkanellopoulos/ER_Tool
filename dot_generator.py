@@ -25,8 +25,7 @@ class DotGenerator:
         self.draw_excluded_tables_note = False
         # Dark mode settings
         self.dark_mode = False
-        # Highlight color for matched tables/fields (light blue instead of goldenrod)
-        self.highlight_color = "dodgerblue"
+        self.highlight_color = "blue"
 
     def _get_display_name(self, table_name: str) -> str:
         """Convert full table name to display name"""
@@ -112,7 +111,7 @@ class DotGenerator:
             dot_output = [
                 "digraph ERD {",
                 "rankdir=TB;",
-                'bgcolor="#808080";',  # 50% gray background
+                'bgcolor="#b1b1b1";',  # gray background
                 "graph [splines=ortho, nodesep=1.2, ranksep=1.2];",
                 f'node [shape=none, fontsize=12, fontname="{DEFAULT_FONT}"];',
                 f'edge [fontname="{DEFAULT_FONT}"];',  # Keep arrows black in dark mode

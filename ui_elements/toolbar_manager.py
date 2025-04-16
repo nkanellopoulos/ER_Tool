@@ -31,6 +31,9 @@ class ToolbarManager:
         # Add actions to toolbar
         self._setup_toolbar()
 
+        # Initialize is_dark_mode flag
+        self.is_dark_mode = main_window.palette().window().color().lightness() < 128
+
     def _create_actions(self):
         """Create all toolbar actions"""
         # Database actions
@@ -213,3 +216,73 @@ class ToolbarManager:
 
         print(f"Warning: Icon not found: {name}.svg", file=sys.stderr)
         return icon
+
+    def update_icons(self, exclude_canvas_button=False):
+        """
+        Update toolbar icons to match the current palette
+
+        Args:
+            exclude_canvas_button: If True, don't update the dark canvas button
+        """
+        # Update is_dark_mode flag based on application palette
+        self.is_dark_mode = (
+            self.main_window.palette().window().color().lightness() < 128
+        )
+
+        # Store canvas button state if needed
+        dark_canvas_checked = None
+        if exclude_canvas_button and hasattr(self, "dark_canvas_action"):
+            dark_canvas_checked = self.dark_canvas_action.isChecked()
+
+        # Instead of recreating actions, just update their icons
+        for action_name in dir(self):
+            if action_name.endswith("_action") and hasattr(self, action_name):
+                action = getattr(self, action_name)
+                if isinstance(action, QAction):
+                    # Only exclude updating the state of the dark canvas button
+                    # but still update its icon to match the theme
+                    icon_name = self._get_icon_name_for_action(action)
+                    if icon_name:
+                        action.setIcon(self._load_icon(icon_name))
+
+        # Restore dark canvas button state if needed
+        if (
+            exclude_canvas_button
+            and hasattr(self, "dark_canvas_action")
+            and dark_canvas_checked is not None
+        ):
+            self.dark_canvas_action.setChecked(dark_canvas_checked)
+
+    def _get_icon_name_for_action(self, action):
+        """Map actions to icon names"""
+        # Create a mapping of action text to icon names
+        icon_map = {
+            "Connect to Database": "database",
+            "Zoom In": "zoom-in",
+            "Zoom Out": "zoom-out",
+            "100%": "zoom-100",
+            "Fit View": "zoom-fit-best",
+            "Dark Canvas": "night-mode",
+            "Select All": "dialog-ok-apply",
+            "Deselect All": "edit-clear",
+            "Refresh": "view-refresh",
+            "Export": "document-save",
+            "Show Referenced Tables": "dialog-ok",
+            "Overview Mode": "airplane",
+            "Show Only Filtered": "view-filter",
+            "Add Filtered": "list-add",
+        }
+
+        # Try to find the icon name from the map
+        if action.text() in icon_map:
+            return icon_map[action.text()]
+
+        # If not found, try to derive from the action name
+        for action_name in dir(self):
+            if action_name.endswith("_action") and getattr(self, action_name) == action:
+                # Convert action_name to likely icon name (e.g., zoom_in_action -> zoom-in)
+                base_name = action_name[:-7]  # Remove '_action'
+                icon_name = base_name.replace("_", "-")
+                return icon_name
+
+        return None
