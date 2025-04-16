@@ -95,6 +95,18 @@ class MainWindow(QMainWindow):
         self.toolbar_manager = ToolbarManager(self)
         self._setup_menus(menubar)
 
+        # Make sure the filter textbox exists
+        if not hasattr(self.toolbar_manager, "filter_edit"):
+            from PySide6.QtWidgets import QLineEdit
+
+            self.toolbar_manager.filter_edit = QLineEdit()
+            self.toolbar_manager.filter_edit.setPlaceholderText(
+                "Search tables and fields..."
+            )
+            self.toolbar_manager.filter_edit.setClearButtonEnabled(True)
+            self.toolbar_manager.filter_edit.setMinimumWidth(200)
+            self.toolbar_manager.toolbar.addWidget(self.toolbar_manager.filter_edit)
+
         # Connect the toolbar filter to our filter handler
         self.toolbar_manager.filter_edit.textChanged.connect(self.on_filter_changed)
         self.toolbar_manager.filter_edit.returnPressed.connect(self.apply_filter)
@@ -132,9 +144,52 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event):
         """Handle palette changes for dark mode"""
         if event.type() == QEvent.Type.PaletteChange:
-            # Force toolbar to update icons
-            self.toolbar_manager.toolbar.update()
+            # Force toolbar to update icons with their proper colors
+            if hasattr(self, "toolbar_manager"):
+                # Update toolbar icons but exclude the canvas theme button
+                self.toolbar_manager.update_icons(exclude_canvas_button=True)
+
+            # Update tree view item colors
+            self.update_tree_item_colors()
+
+            # Update highlighted items if there's an active filter
+            if self.filter_text:
+                self.highlight_matching_tables_in_tree()
+
+            # Update the diagram view's background color
+            if hasattr(self, "diagram_view") and self.diagram_view.scene():
+                # We don't update the dark canvas setting here
+                # The canvas theme is manually controlled by the user
+                pass
+
         super().changeEvent(event)
+
+    def update_tree_item_colors(self):
+        """Update all tree item colors to match the current palette"""
+        if not hasattr(self, "table_tree"):
+            return
+
+        # Block signals to prevent unintended refreshes
+        self.table_tree.blockSignals(True)
+
+        try:
+            # Get the current palette text color
+            text_color = self.palette().text().color()
+
+            # Update all items to use the current palette color
+            iterator = QTreeWidgetItemIterator(self.table_tree)
+            while iterator.value():
+                item = iterator.value()
+                # Skip highlighted items (they have a different color)
+                if (
+                    not hasattr(self, "matching_tables")
+                    or item.text(0) not in self.matching_tables
+                ):
+                    item.setForeground(0, text_color)
+                iterator += 1
+        finally:
+            # Unblock signals
+            self.table_tree.blockSignals(False)
 
     def _setup_menus(self, menubar):
         """Setup application menus"""
@@ -219,6 +274,7 @@ class MainWindow(QMainWindow):
         """Set zoom level to 100%"""
         self.diagram_view.resetTransform()
         self.diagram_view.scale(1.0, 1.0)
+        self.update_status_bar()
         self._update_zoom_label(1.0)
 
     def _update_zoom_label(self, zoom_level: float):
@@ -240,7 +296,6 @@ class MainWindow(QMainWindow):
             self.db_name = parsed.path.strip("/")
 
             self.tables = SchemaReader.from_database(self.connection_string)
-
             # Populate tree widget
             self.table_tree.clear()
             for table_name in sorted(self.tables.keys()):
@@ -249,7 +304,6 @@ class MainWindow(QMainWindow):
                 item.setCheckState(0, Qt.Unchecked)
 
             self.update_status_bar()
-
         except Exception as e:
             print(f"Error loading tables: {e}", file=sys.stderr)
             QMessageBox.warning(self, "Connection Error", str(e))
@@ -300,8 +354,23 @@ class MainWindow(QMainWindow):
             print("⛔ Too many refreshes, stopping refresh cycle")
             return
 
-        # Save current zoom level only - we'll center view later
-        current_zoom = self.diagram_view.zoom_level
+        # Check if we should preserve zoom from a special flag
+        preserve_zoom = (
+            hasattr(self, "_preserve_zoom_on_next_refresh")
+            and self._preserve_zoom_on_next_refresh
+        )
+
+        # If preserving from flag, use that value, otherwise use current zoom
+        current_zoom = (
+            self._preserve_zoom_on_next_refresh
+            if preserve_zoom
+            else self.diagram_view.zoom_level
+        )
+
+        # Clear the flag after using it
+        if hasattr(self, "_preserve_zoom_on_next_refresh"):
+            del self._preserve_zoom_on_next_refresh
+
         print(f"Saving current zoom level: {current_zoom:.2f}")
 
         self._refreshing = True
@@ -352,13 +421,14 @@ class MainWindow(QMainWindow):
                 show_only_filtered=self.show_only_filtered,
                 dark_mode=dark_mode_enabled,  # Pass dark mode setting to generator
             )
-
+            # Generate DOT content
             # Log dot generation time
             dot_gen_time = time.time() - start_time
             print(f"DOT generation took {dot_gen_time:.2f} seconds")
 
             # Create hash for the dot_content to use for caching
             content_hash = hashlib.md5(dot_content.encode()).hexdigest()
+
             # Reset timer for next step
             start_time = time.time()
             # Create temporary directory for our files
@@ -368,7 +438,6 @@ class MainWindow(QMainWindow):
             # Write DOT file
             with open(dot_path, "w") as dot_file:
                 dot_file.write(dot_content)
-
             # Log DOT file writing time
             file_write_time = time.time() - start_time
             print(f"DOT file writing took {file_write_time:.2f} seconds")
@@ -423,7 +492,6 @@ class MainWindow(QMainWindow):
             # Reset transform before fitting to view
             self.diagram_view.resetTransform()
             self.diagram_view.fitInView(svg_item, Qt.KeepAspectRatio)
-
             # When adding SVG to the view, make sure to reset the dark mode
             if isinstance(self.diagram_view.scene(), DarkModeGraphicsScene):
                 dark_mode_enabled = self.toolbar_manager.dark_canvas_action.isChecked()
@@ -437,13 +505,11 @@ class MainWindow(QMainWindow):
 
                 # Scale to desired zoom level
                 self.diagram_view.scale(zoom_factor, zoom_factor)
-
                 print(f"Restored zoom level to {current_zoom:.2f}")
 
             # Log SVG loading time
             svg_load_time = time.time() - start_time
             print(f"SVG loading took {svg_load_time:.2f} seconds")
-
             # Add to cleanup list - will be cleaned up on exit
             self.temp_files.append(temp_dir)
             self.update_status_bar()
@@ -648,7 +714,7 @@ class MainWindow(QMainWindow):
             iterator = QTreeWidgetItemIterator(self.table_tree)
             while iterator.value():
                 item = iterator.value()
-                # Reset foreground color to default
+                # Reset foreground color to default palette text color
                 item.setForeground(0, self.palette().text())
                 # Reset to normal font
                 normal_font = QFont(self.font())
@@ -660,12 +726,16 @@ class MainWindow(QMainWindow):
             if not self.filter_text or not self.matching_tables:
                 return
 
-            # Set matching tables to light blue and bold
+            # Set matching tables to bold with highlight color
             bold_font = QFont(self.font())
             bold_font.setBold(True)
 
-            # Use light blue for highlighting in the tree view
-            highlight_color = QColor(30, 144, 255)  # Dodger blue
+            # Use a highlight color that works with both light and dark modes
+            # For dark mode, use a lighter blue; for light mode, use a darker blue
+            is_dark_mode = self.palette().window().color().lightness() < 128
+            highlight_color = (
+                QColor(100, 180, 255) if is_dark_mode else QColor(0, 100, 200)
+            )
 
             iterator = QTreeWidgetItemIterator(self.table_tree)
             while iterator.value():
@@ -798,7 +868,6 @@ class MainWindow(QMainWindow):
         """Toggle dark canvas mode for the diagram view"""
         dark_mode_enabled = self.toolbar_manager.dark_canvas_action.isChecked()
         self.diagram_view.set_dark_canvas(dark_mode_enabled)
-
         # Force diagram regeneration when dark mode changes
         # This is needed to update arrow colors and other DOT-generated elements
         print(f"Dark canvas mode toggled: {dark_mode_enabled}")
@@ -839,10 +908,15 @@ class MainWindow(QMainWindow):
                 selected_tables.append(item.table_name)
 
         if selected_tables:
+            # Save current zoom level before refreshing
+            current_zoom = self.diagram_view.zoom_level
+
             # Update the selected tables in the model
             self.tables.update(selected_tables)
 
             # Refresh the diagram to show the newly selected tables
+            # Use a special flag to indicate this refresh should preserve zoom
+            self._preserve_zoom_on_next_refresh = current_zoom
             self.refresh_diagram()
 
             # Log for debugging
