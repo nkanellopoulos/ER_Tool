@@ -17,6 +17,7 @@ from PySide6.QtCore import QProcess
 from PySide6.QtCore import QRectF
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
+from PySide6.QtGui import QColor  # Add this import for QColor
 from PySide6.QtGui import QFont
 from PySide6.QtSvgWidgets import QGraphicsSvgItem
 from PySide6.QtWidgets import QApplication
@@ -37,6 +38,7 @@ from ui_elements import ConnectionDialog
 from ui_elements import ERDiagramView
 from ui_elements import StatusBarManager
 from ui_elements import ToolbarManager
+from ui_elements.diagram_view import DarkModeGraphicsScene  # Add this import
 
 
 class MainWindow(QMainWindow):
@@ -123,6 +125,9 @@ class MainWindow(QMainWindow):
 
         # Hook up zoom tracking
         self.diagram_view.on_zoom_changed = self._update_zoom_label
+
+        # Setup tree view selection handling
+        self.setup_tree_view()
 
     def changeEvent(self, event):
         """Handle palette changes for dark mode"""
@@ -295,6 +300,10 @@ class MainWindow(QMainWindow):
             print("⛔ Too many refreshes, stopping refresh cycle")
             return
 
+        # Save current zoom level only - we'll center view later
+        current_zoom = self.diagram_view.zoom_level
+        print(f"Saving current zoom level: {current_zoom:.2f}")
+
         self._refreshing = True
 
         try:
@@ -326,14 +335,24 @@ class MainWindow(QMainWindow):
                 self.db_name,
                 table_prefix=self.status_bar_manager.get_prefix(),
             )
+            # Set whether to draw excluded tables note (off by default)
+            generator.draw_excluded_tables_note = False
+
+            # Check if dark mode is enabled
+            dark_mode_enabled = False
+            if hasattr(self.toolbar_manager, "dark_canvas_action"):
+                dark_mode_enabled = self.toolbar_manager.dark_canvas_action.isChecked()
+
             dot_content = generator.generate(
                 exclude_tables=self.get_excluded_tables(),
                 show_referenced=self.show_referenced_action.isChecked(),
                 overview_mode=self.toolbar_manager.overview_action.isChecked(),
                 matching_tables=self.matching_tables,
                 matching_fields=self.matching_fields,
-                show_only_filtered=self.show_only_filtered,  # Pass to generator
+                show_only_filtered=self.show_only_filtered,
+                dark_mode=dark_mode_enabled,  # Pass dark mode setting to generator
             )
+
             # Log dot generation time
             dot_gen_time = time.time() - start_time
             print(f"DOT generation took {dot_gen_time:.2f} seconds")
@@ -404,6 +423,22 @@ class MainWindow(QMainWindow):
             # Reset transform before fitting to view
             self.diagram_view.resetTransform()
             self.diagram_view.fitInView(svg_item, Qt.KeepAspectRatio)
+
+            # When adding SVG to the view, make sure to reset the dark mode
+            if isinstance(self.diagram_view.scene(), DarkModeGraphicsScene):
+                dark_mode_enabled = self.toolbar_manager.dark_canvas_action.isChecked()
+                self.diagram_view.scene().set_dark_mode(dark_mode_enabled)
+
+            # Now apply saved zoom level if it exists (but center view)
+            if current_zoom > 0.1:  # Minimum threshold
+                # Calculate required scaling to get from fit-zoom to saved zoom
+                fit_zoom = self.diagram_view.zoom_level
+                zoom_factor = current_zoom / fit_zoom
+
+                # Scale to desired zoom level
+                self.diagram_view.scale(zoom_factor, zoom_factor)
+
+                print(f"Restored zoom level to {current_zoom:.2f}")
 
             # Log SVG loading time
             svg_load_time = time.time() - start_time
@@ -542,6 +577,9 @@ class MainWindow(QMainWindow):
         old_auto_refresh = self.auto_refresh
         self.auto_refresh = False
 
+        # Initialize old_cursor before try block
+        old_cursor = self.cursor()
+
         try:
             # Update filtered data
             self.update_filtered_tables()
@@ -550,7 +588,6 @@ class MainWindow(QMainWindow):
             self.highlight_matching_tables_in_tree()
 
             # Show wait cursor
-            old_cursor = self.cursor()
             self.setCursor(Qt.WaitCursor)
             QCoreApplication.processEvents()
 
@@ -623,9 +660,12 @@ class MainWindow(QMainWindow):
             if not self.filter_text or not self.matching_tables:
                 return
 
-            # Set matching tables to red and bold
+            # Set matching tables to light blue and bold
             bold_font = QFont(self.font())
             bold_font.setBold(True)
+
+            # Use light blue for highlighting in the tree view
+            highlight_color = QColor(30, 144, 255)  # Dodger blue
 
             iterator = QTreeWidgetItemIterator(self.table_tree)
             while iterator.value():
@@ -633,7 +673,7 @@ class MainWindow(QMainWindow):
                 table_name = item.text(0)
 
                 if table_name in self.matching_tables:
-                    item.setForeground(0, Qt.red)
+                    item.setForeground(0, highlight_color)
                     item.setFont(0, bold_font)
 
                 iterator += 1
@@ -753,6 +793,60 @@ class MainWindow(QMainWindow):
         finally:
             # Always restore the cursor
             self.setCursor(old_cursor)
+
+    def toggle_dark_canvas(self):
+        """Toggle dark canvas mode for the diagram view"""
+        dark_mode_enabled = self.toolbar_manager.dark_canvas_action.isChecked()
+        self.diagram_view.set_dark_canvas(dark_mode_enabled)
+
+        # Force diagram regeneration when dark mode changes
+        # This is needed to update arrow colors and other DOT-generated elements
+        print(f"Dark canvas mode toggled: {dark_mode_enabled}")
+
+        # Clear the cache to force a refresh with the new dark mode setting
+        if hasattr(self, "_diagram_cache"):
+            self._diagram_cache = {}
+
+        # Refresh the diagram to apply dark mode changes
+        self.refresh_diagram()
+
+    def setup_tree_view(self):
+        """Setup tree view selection handling"""
+        self.table_tree.itemSelectionChanged.connect(self.on_tree_selection_changed)
+        self.table_tree.itemClicked.connect(self.on_tree_item_clicked)
+
+    def on_tree_selection_changed(self):
+        """Handle tree view selection changes and update the diagram accordingly"""
+        self.update_diagram_from_selection()
+
+    def on_tree_item_clicked(self, item, column):
+        """Additional handler to ensure clicked items are properly selected and added to diagram"""
+        # Make sure the item is selected (sometimes selection events don't trigger properly)
+        if not item.isSelected():
+            item.setSelected(True)
+
+        # Force update of the diagram based on the current selection
+        self.update_diagram_from_selection()
+
+    def update_diagram_from_selection(self):
+        """Update the diagram based on the current tree selection"""
+        selected_tables = []
+
+        # Get all selected items
+        for item in self.table_tree.selectedItems():
+            # Only consider table items (not category/group items)
+            if hasattr(item, "table_name") and item.table_name:
+                selected_tables.append(item.table_name)
+
+        if selected_tables:
+            # Update the selected tables in the model
+            self.tables.update(selected_tables)
+
+            # Refresh the diagram to show the newly selected tables
+            self.refresh_diagram()
+
+            # Log for debugging
+            print(f"Added tables to diagram: {selected_tables}")
 
 
 def main():
