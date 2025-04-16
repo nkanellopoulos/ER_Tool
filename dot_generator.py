@@ -1,9 +1,14 @@
 import sys
+import time  # Add this import for timing
 from datetime import datetime
 from typing import Dict
 from typing import List
+from typing import Set
 
 from schema_reader import Table
+
+# Constants
+DEFAULT_FONT = "American Typewriter"  # Use original font
 
 
 class DotGenerator:
@@ -19,9 +24,19 @@ class DotGenerator:
 
     def _get_display_name(self, table_name: str) -> str:
         """Convert full table name to display name"""
+        # Cache display names for better performance
+        if not hasattr(self, "_display_name_cache"):
+            self._display_name_cache = {}
+
+        if table_name in self._display_name_cache:
+            return self._display_name_cache[table_name]
+
+        result = table_name
         if self.table_prefix and table_name.startswith(self.table_prefix):
-            return "..." + table_name[len(self.table_prefix) :]
-        return table_name
+            result = "..." + table_name[len(self.table_prefix) :]
+
+        self._display_name_cache[table_name] = result
+        return result
 
     def _generate_excluded_tables_note(self, excluded_tables: List[str]) -> List[str]:
         """Generate a note showing excluded tables"""
@@ -50,6 +65,9 @@ class DotGenerator:
         exclude_tables: List[str] = None,
         show_referenced: bool = False,
         overview_mode: bool = False,
+        matching_tables: Set[str] = None,
+        matching_fields: Dict[str, List[str]] = None,
+        show_only_filtered: bool = False,  # Add show_only_filtered parameter
     ) -> str:
         """
         Generate DOT format output from table definitions
@@ -58,14 +76,32 @@ class DotGenerator:
             exclude_tables: List of tables to exclude
             show_referenced: Whether to show referenced tables (default: False)
             overview_mode: Whether to generate a simplified overview (default: False)
+            matching_tables: Set of table names that match the filter
+            matching_fields: Dictionary mapping table names to lists of field names that match the filter
+            show_only_filtered: Whether to show only tables matching the filter
         """
+        # Reduced logging to help track real issues
+        if exclude_tables is None:
+            exclude_tables = []
+        if matching_tables is None:
+            matching_tables = set()
+        if matching_fields is None:
+            matching_fields = {}
+
+        # Get filtered tables
         tables = self._get_filtered_tables(exclude_tables, show_referenced)
 
+        # Further filter to only show matching tables if requested
+        if show_only_filtered and matching_tables:
+            tables = {k: v for k, v in tables.items() if k in matching_tables}
+
+        # Start DOT file
         dot_output = [
             "digraph ERD {",
             "rankdir=TB;",
             "graph [splines=ortho, nodesep=1.2, ranksep=1.2];",
-            'node [shape=none, fontsize=12, fontname="American Typewriter"];',
+            f'node [shape=none, fontsize=12, fontname="{DEFAULT_FONT}"];',
+            f'edge [fontname="{DEFAULT_FONT}"];',
             # Add title with box
             'labelloc="t";',
             'label=<<TABLE BORDER="1" CELLBORDER="0" CELLPADDING="10">',
@@ -79,9 +115,17 @@ class DotGenerator:
         if exclude_tables:
             dot_output.extend(self._generate_excluded_tables_note(exclude_tables))
 
+        # Add filter status note if filtered view is active
+        if show_only_filtered and matching_tables:
+            dot_output.extend(self._generate_filter_note(len(matching_tables)))
+
         # Add tables
         for table_name, table in tables.items():
-            dot_output.extend(self._generate_table_node(table, overview_mode))
+            highlight = table_name in matching_tables
+            table_fields = matching_fields.get(table_name, [])
+            dot_output.extend(
+                self._generate_table_node(table, overview_mode, highlight, table_fields)
+            )
 
         # Add relationships
         for table_name, table in tables.items():
@@ -89,6 +133,18 @@ class DotGenerator:
 
         dot_output.append("}")
         return "\n".join(dot_output)
+
+    def _generate_filter_note(self, matches_count: int) -> List[str]:
+        """Generate a note showing filter status"""
+        dot_output = [
+            "filter_note [label=<",
+            '<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">',
+            '<TR><TD BGCOLOR="#fff0f0" HEIGHT="30"><B>Filtered View</B></TD></TR>',
+            f'<TR><TD ALIGN="LEFT" HEIGHT="22">Showing {matches_count} matching tables</TD></TR>',
+            "</TABLE>",
+            '>, pos="0,0!", shape=none];',
+        ]
+        return dot_output
 
     def _generate_title(self, total_tables: int, shown_tables: int) -> str:
         """Generate diagram title with metadata"""
@@ -129,25 +185,47 @@ class DotGenerator:
             return selected_tables
 
     def _generate_table_node(
-        self, table: Table, overview_mode: bool = False
+        self,
+        table: Table,
+        overview_mode: bool = False,
+        highlight: bool = False,
+        matching_fields: List[str] = None,
     ) -> List[str]:
         """Generate DOT node definition for a table"""
+        if matching_fields is None:
+            matching_fields = []
+
         dot_output = []
+        # Set the table border color and width based on highlight status
+        border_color = "red" if highlight else "black"
+        border_width = 3 if highlight else 1
+
+        # Determine if the table name should be highlighted (red) based on the highlight flag
+        table_name_color = "red" if highlight else "black"
+        table_name_style = ' style="bold"' if highlight else ""
+
+        # Add the node with HTML table label
         dot_output.append(f"{table.name} [label=<")
-        dot_output.append('<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">')
+
+        # Main table tag with border color for the outer border
+        dot_output.append(
+            f'<TABLE BORDER="{border_width}" CELLSPACING="0" COLOR="{border_color}">'
+        )
 
         if overview_mode:
-            # Overview mode: simple square node with fixed size and  yellow background
+            # Overview mode: simple square node with fixed size and yellow background
             dot_output.append(
                 f'<TR><TD BGCOLOR="lightyellow" WIDTH="170" HEIGHT="240">'
-                f"<B>{self.display_names[table.name]}</B>"
+                f'<FONT COLOR="{table_name_color}"{table_name_style}><B>{self.display_names[table.name]}</B></FONT>'
                 f"</TD></TR>"
             )
         else:
             # Detailed mode: show all columns and constraints
-            # Table header
+            # Table header - highlight the table name if it matches the filter
             dot_output.append(
-                f'<TR><TD BGCOLOR="lightblue"><B>{self.display_names[table.name]}</B></TD></TR>'
+                f'<TR><TD BGCOLOR="lightblue" BORDER="1">'
+                f'<FONT COLOR="{table_name_color}"{table_name_style}><B>{self.display_names[table.name]}</B></FONT>'
+                f"</TD></TR>"
             )
 
             # Group constraints by type
@@ -169,14 +247,21 @@ class DotGenerator:
                 if column.constraints and "PRIMARY KEY" not in column.constraints:
                     constraints_text = f" ({', '.join(c for c in column.constraints if c != 'PRIMARY KEY')})"
 
+                # Highlight matching fields with red text
+                font_color = "red" if column.name in matching_fields else "black"
+                font_style = ' style="bold"' if column.name in matching_fields else ""
+
+                # Add BORDER="1" to keep the cell borders
                 dot_output.append(
-                    f'<TR><TD ALIGN="LEFT" PORT="{column.name}"><B>{col_name}</B>: {column.type}{constraints_text}</TD></TR>'
+                    f'<TR><TD ALIGN="LEFT" PORT="{column.name}" BORDER="1">'
+                    f'<FONT COLOR="{font_color}" FACE="{DEFAULT_FONT}"{font_style}><B>{col_name}</B>: {column.type}{constraints_text}</FONT>'
+                    f"</TD></TR>"
                 )
 
-            # Add remaining constraints
+            # Add remaining constraints with border
             for constraint in other_constraints:
                 dot_output.append(
-                    f'<TR><TD ALIGN="LEFT" BGCOLOR="#f0f0f0"><I>{constraint.definition}</I></TD></TR>'
+                    f'<TR><TD ALIGN="LEFT" BGCOLOR="#f0f0f0" BORDER="1"><I>{constraint.definition}</I></TD></TR>'
                 )
 
         dot_output.append("</TABLE>>];")
@@ -185,9 +270,6 @@ class DotGenerator:
     def _generate_relationships(self, table: Table) -> List[str]:
         """Generate DOT edges for table relationships"""
         dot_output = []
-        print(f"\nProcessing relationships for {table.name}", file=sys.stderr)
-        print(f"Foreign keys: {table.foreign_keys}", file=sys.stderr)
-
         table_names_map = {t.upper(): t for t in self.tables.keys()}
 
         for column_name, referenced_table in table.foreign_keys:
@@ -196,7 +278,6 @@ class DotGenerator:
                 if "." in referenced_table
                 else referenced_table
             )
-            print(f"  Checking FK {column_name} -> {ref_table}", file=sys.stderr)
 
             # Try both original case and uppercase
             if ref_table in self.tables:
@@ -204,10 +285,8 @@ class DotGenerator:
             elif ref_table.upper() in table_names_map:
                 actual_table = table_names_map[ref_table.upper()]
             else:
-                print("    Referenced table not found", file=sys.stderr)
                 continue
 
-            print("    Adding relationship", file=sys.stderr)
             dot_output.append(
                 f'{table.name} -> {actual_table} [xlabel="{column_name}"];'
             )
