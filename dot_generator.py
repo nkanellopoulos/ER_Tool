@@ -25,7 +25,7 @@ class DotGenerator:
         self.draw_excluded_tables_note = False
         # Dark mode settings
         self.dark_mode = False
-        self.highlight_color = "blue"
+        self.highlight_color = "#000099"
 
     def _get_display_name(self, table_name: str) -> str:
         """Convert full table name to display name"""

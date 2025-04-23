@@ -38,7 +38,7 @@ class ToolbarManager:
         """Create all toolbar actions"""
         # Database actions
         self.connect_action = self._create_action(
-            "Connect to Database",
+            "Connect to DB",
             "database",
             "Ctrl+B",
             self.main_window.show_connection_dialog,
@@ -137,7 +137,7 @@ class ToolbarManager:
         self.toolbar.addSeparator()
 
         # Database section
-        self.toolbar.addWidget(QLabel("Database: "))
+        # self.toolbar.addWidget(QLabel("Database: "))
         self.toolbar.addAction(self.connect_action)
         self.toolbar.addSeparator()
 
